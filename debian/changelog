@@ -1,0 +1,29 @@
+ghcap (0.13.0-1) unstable; urgency=medium
+
+  * Fix Result<bool, _> versus Result<(), _> control-flow errors in CUI operations.
+  * Keep repository clone as a repository-level action.
+  * Add unit tests for GitHub remote URL parsing.
+  * Keep the login URL visible before invoking gh auth login.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 15:00:00 +0900
+
+ghcap (0.12.0-1) unstable; urgency=medium
+
+  * Moved Clone into each repository menu instead of the Home menu.
+  * Switched processing prompts and operation results from TUI dialogs to CUI.
+  * Always display the GitHub device login URL before starting browser/device authentication.
+  * Display process exit codes on operation failures where available.
+  * Kept GitHub authentication and cloning based on the gh CLI.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 15:30:00 +0900
+
+ghcap (0.12.0-1) unstable; urgency=medium
+
+  * Fixed the build pipeline so cargo-fmt is optional when only the Debian Rust compiler is installed.
+  * Added cargo check and cargo test validation before the release build.
+  * Kept Cargo.lock based reproducible dependency resolution without guessed transitive versions.
+  * Retained gh CLI based GitHub authentication and repository cloning.
+  * Retained local Git repository auto-detection and deterministic TUI rendering.
+  * Updated displayed version to 0.12.0.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 15:00:00 +0900

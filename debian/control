@@ -1,0 +1,13 @@
+Source: ghcap
+Section: utils
+Priority: optional
+Maintainer: ghcap contributors <noreply@example.com>
+Build-Depends: debhelper-compat (= 13), cargo, rustc
+Standards-Version: 4.6.2
+
+Package: ghcap
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, git, gh, gpg
+Description: GitHub Committer and Pusher TUI
+ Terminal UI for GitHub account, repository, commit, push, GPG,
+ presets and repository-specific pre-push workflows.
