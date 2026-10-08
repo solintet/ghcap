@@ -1,4 +1,4 @@
-use std::{io::{BufRead, BufReader}, path::Path, process::{Command, Stdio}, thread};
+use std::{io::{BufRead, BufReader}, path::Path, process::{Command, Stdio}, sync::mpsc::{self, RecvTimeoutError}, thread, time::Duration};
 
 pub fn git(args: &[&str]) -> Result<String, String> { git_in(None, args) }
 
@@ -66,7 +66,20 @@ pub fn git_in_live(dir: Option<&Path>, args: &[&str]) -> Result<String, String> 
         text
     });
 
-    let status = child.wait().map_err(|e| format!("git: {e}"))?;
+    // Git may legitimately stay silent for a while (authentication, network,
+    // GPG, hooks, etc.). Keep the CUI visibly alive once per second.
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let ticker = thread::spawn(move || loop {
+        match stop_rx.recv_timeout(Duration::from_secs(1)) {
+            Ok(_) | Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => println!("Running... Please wait."),
+        }
+    });
+
+    let status = child.wait().map_err(|e| format!("git: {e}"));
+    let _ = stop_tx.send(());
+    let _ = ticker.join();
+    let status = status?;
     let stdout_text = out_thread.join().unwrap_or_default();
     let stderr_text = err_thread.join().unwrap_or_default();
     if status.success() {

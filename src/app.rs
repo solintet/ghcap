@@ -248,11 +248,24 @@ fn gpg_recovery(tui:&mut Tui,path:&Path,lang:&str)->io::Result<bool>{ let keys=m
 
 fn presets(config:&mut Config,tui:&mut Tui)->io::Result<()> {
     let mut selected = 0usize;
-    loop { let lang=config.language.clone(); let items=config.presets.iter().map(|p|format!("{} — {}",p.name,p.message)).collect::<Vec<_>>();
-        if items.is_empty(){add_preset(config,tui)?;continue;}
+    loop {
+        let lang=config.language.clone();
+        let mut items=config.presets.iter().map(|p|format!("{} — {}",p.name,p.message)).collect::<Vec<_>>();
+        items.push("プリセットを追加".into());
         let footer=format!("{}  Enter {}  a {}  e {}  d {}  Shift+↑/↓ {}  Esc {}",t(&lang,"key.navigate"),t(&lang,"presets.use_key"),t(&lang,"presets.add_key"),t(&lang,"presets.edit_key"),t(&lang,"presets.delete_key"),t(&lang,"presets.move_key"),t(&lang,"common.back"));
         let Some((index,action))=ui::manage_select(tui,&lang,&t(&lang,"repo.presets"),&items,&footer,&mut selected)? else{return Ok(())};
-        match action { ListAction::Open=>return Ok(()), ListAction::Add=>add_preset(config,tui)?, ListAction::Edit=>edit_preset(config,tui,index)?, ListAction::Delete=>delete_preset(config,tui,index)?, ListAction::MoveUp=>if index>0{config.presets.swap(index,index-1);selected-=1;storage::save_config(config)?;}, ListAction::MoveDown=>if index+1<config.presets.len(){config.presets.swap(index,index+1);selected+=1;storage::save_config(config)?;}, ListAction::Back=>return Ok(()) }
+        let add_row = index == config.presets.len();
+        match action {
+            ListAction::Open if add_row => { add_preset(config,tui)?; selected=config.presets.len().saturating_sub(1); }
+            ListAction::Open => return Ok(()),
+            ListAction::Add => add_preset(config,tui)?,
+            ListAction::Edit if !add_row => edit_preset(config,tui,index)?,
+            ListAction::Delete if !add_row => delete_preset(config,tui,index)?,
+            ListAction::MoveUp if !add_row && index>0 => { config.presets.swap(index,index-1); selected-=1; storage::save_config(config)?; },
+            ListAction::MoveDown if !add_row && index+1<config.presets.len() => { config.presets.swap(index,index+1); selected+=1; storage::save_config(config)?; },
+            ListAction::Back => return Ok(()),
+            _ => {}
+        }
     }
 }
 fn add_preset(config:&mut Config,tui:&mut Tui)->io::Result<()> {let lang=config.language.clone();let name=ui::prompt(tui,&t(&lang,"presets.name"),"New preset")?.unwrap_or_default();let message=ui::prompt(tui,&t(&lang,"presets.message"),"Update: ")?.unwrap_or_default();let id=format!("preset-{}-{}",std::process::id(),config.presets.len()+1);config.presets.push(crate::models::Preset{id,name,message});storage::save_config(config)}

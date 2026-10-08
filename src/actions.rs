@@ -30,6 +30,10 @@ fn shell(command: &str, dir: &Path) -> Result<(), String> {
 pub fn commit(msg: &str, dir: &Path) -> Result<String, String> {
     poll_stop(); if COMMIT_STOP.load(Ordering::SeqCst) || COMMIT_PUSH_STOP.load(Ordering::SeqCst) { return Ok("Commit cancelled.".into()); }
 
+    // The UI accepts literal \n as the only line-break notation. Convert it
+    // immediately before invoking Git so the preset/input format stays simple.
+    let commit_message = msg.replace("\\n", "\n");
+
     // Stage everything first. If there is still nothing staged afterwards,
     // this is not a real commit failure; it simply means there is nothing to commit.
     git::git_in(Some(dir), &["add", "-A"])?;
@@ -39,7 +43,7 @@ pub fn commit(msg: &str, dir: &Path) -> Result<String, String> {
     }
 
     poll_stop(); if COMMIT_STOP.load(Ordering::SeqCst) || COMMIT_PUSH_STOP.load(Ordering::SeqCst) { return Ok("Commit cancelled.".into()); }
-    git::git_in_live(Some(dir), &["commit", "-m", msg])
+    git::git_in_live(Some(dir), &["commit", "-m", &commit_message])
 }
 
 pub fn push(dir: &Path) -> Result<String, String> {

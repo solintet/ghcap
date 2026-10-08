@@ -1,8 +1,8 @@
 Package: ghcap
-Version: 0.22.0-1
+Version: 0.24.1-1
 Architecture: amd64
 Maintainer: ghcap contributors <noreply@example.com>
-Installed-Size: 1022
+Installed-Size: 1066
 Depends: libc6 (>= 2.39), libgcc-s1 (>= 4.2), git, gh, gpg
 Section: utils
 Priority: optional

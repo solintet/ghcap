@@ -56,7 +56,7 @@ pub fn draw_menu(_t: &mut Tui, lang: &str, title: &str, items: &[String], select
     let outer_h = height.saturating_sub(2).max(4);
     draw_box(&mut stdout, 0, 0, outer_w, outer_h)?;
 
-    let header = format!(" ghcap 0.22.0 · {title} ");
+    let header = format!(" ghcap 0.24.1 · {title} ");
     execute!(stdout, MoveTo(2, 0), SetAttribute(Attribute::Bold), Print(truncate(&header, outer_w.saturating_sub(4) as usize)), SetAttribute(Attribute::Reset))?;
 
     let list_top = 2u16;
@@ -197,116 +197,77 @@ pub enum CommitMessageDecision {
     BackToRepo,
 }
 
-fn draw_commit_editor_cui(text_value: &[char], cursor: usize) -> io::Result<()> {
-    let mut stdout = io::stdout();
-    let (width, height) = terminal::size()?;
-    execute!(stdout, Clear(ClearType::All), MoveTo(0, 0), SetAttribute(Attribute::Reset))?;
-    println!("ghcap 0.22.0 - Commit Message");
-    println!("=== コミットメッセージ ===");
-    println!();
+pub fn edit_commit_message(_t: &mut Tui, lang: &str, initial: &str) -> io::Result<CommitMessageDecision> {
+    // Commit message input is deliberately plain CUI.  Do not use terminal
+    // coordinates, alternate-screen rendering, or a custom full-screen editor
+    // here: those caused severe horizontal/vertical displacement on terminals
+    // with different sizes or character rendering behavior.
+    loop {
+        leave_tui()?;
+        terminal::disable_raw_mode().ok();
+        println!();
+        println!("ghcap 0.24.1 - Commit Message");
+        println!("=== コミットメッセージ ===");
+        println!();
+        println!("現在のメッセージ:");
+        println!("{}", initial);
+        println!();
+        println!("新しいコミットメッセージを入力してください。");
+        println!("Enter: Commit確認    :back: 戻る");
+        print!("> ");
+        io::stdout().flush()?;
 
-    let mut lines = vec![String::new()];
-    let mut cursor_line = 0usize;
-    let mut cursor_col = 0usize;
-    for (i, ch) in text_value.iter().enumerate() {
-        if i == cursor {
-            cursor_line = lines.len() - 1;
-            cursor_col = lines.last().map(|x| x.chars().count()).unwrap_or(0);
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let input = input.trim_end_matches(['\r', '\n']).to_string();
+
+        if input == ":back" {
+            enter_tui()?;
+            return Ok(CommitMessageDecision::BackToPresets);
         }
-        if *ch == '\n' { lines.push(String::new()); } else { lines.last_mut().unwrap().push(*ch); }
-    }
-    if cursor == text_value.len() {
-        cursor_line = lines.len() - 1;
-        cursor_col = lines.last().map(|x| x.chars().count()).unwrap_or(0);
-    }
 
-    let max_width = width.saturating_sub(1) as usize;
-    let max_lines = height.saturating_sub(6).max(1) as usize;
-    let first_line = if cursor_line >= max_lines { cursor_line + 1 - max_lines } else { 0 };
-    for line in lines.iter().skip(first_line).take(max_lines) {
-        println!("{}", truncate(line, max_width));
-    }
-    println!();
-    println!();
-    println!("Shift+Enter: 改行    Enter: Commit確認    Esc: 戻る");
+        // Empty input keeps the selected preset/message instead of silently
+        // creating an empty commit message.
+        let message = if input.is_empty() { initial.to_string() } else { input };
 
-    let visible_line = cursor_line.saturating_sub(first_line) as u16;
-    let visible_col = cursor_col.min(max_width.saturating_sub(1)) as u16;
-    let y = 2u16.saturating_add(visible_line);
-    execute!(stdout, MoveTo(visible_col, y), Show)?;
-    stdout.flush()?;
-    Ok(())
+        enter_tui()?;
+        match commit_confirm(lang)? {
+            CommitConfirm::Yes => return Ok(CommitMessageDecision::Commit(message)),
+            CommitConfirm::No => return Ok(CommitMessageDecision::BackToRepo),
+            CommitConfirm::Edit => {
+                // Edit the message that was just entered on the next CUI pass.
+                return edit_commit_message_cui_reedit(lang, &message);
+            }
+        }
+    }
 }
 
-pub fn edit_commit_message(_t: &mut Tui, lang: &str, initial: &str) -> io::Result<CommitMessageDecision> {
-    let mut text_value: Vec<char> = initial.chars().collect();
-    let mut cursor = text_value.len();
-    leave_tui()?;
-    terminal::enable_raw_mode()?;
-
+fn edit_commit_message_cui_reedit(lang: &str, initial: &str) -> io::Result<CommitMessageDecision> {
     loop {
-        draw_commit_editor_cui(&text_value, cursor)?;
-        let key = read_key()?;
-        match key.code {
-            KeyCode::Esc => {
-                terminal::disable_raw_mode()?;
-                enter_tui()?;
-                return Ok(CommitMessageDecision::BackToPresets);
-            }
-            KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                text_value.insert(cursor, '\n');
-                cursor += 1;
-            }
-            KeyCode::Enter => {
-                terminal::disable_raw_mode()?;
-                enter_tui()?;
-                match commit_confirm(lang)? {
-                    CommitConfirm::Yes => return Ok(CommitMessageDecision::Commit(text_value.iter().collect())),
-                    CommitConfirm::No => return Ok(CommitMessageDecision::BackToRepo),
-                    CommitConfirm::Edit => {
-                        leave_tui()?;
-                        terminal::enable_raw_mode()?;
-                    }
-                }
-            }
-            KeyCode::Char(c) => {
-                text_value.insert(cursor, c);
-                cursor += 1;
-            }
-            KeyCode::Backspace => {
-                if cursor > 0 { cursor -= 1; text_value.remove(cursor); }
-            }
-            KeyCode::Delete => {
-                if cursor < text_value.len() { text_value.remove(cursor); }
-            }
-            KeyCode::Left => cursor = cursor.saturating_sub(1),
-            KeyCode::Right => cursor = (cursor + 1).min(text_value.len()),
-            KeyCode::Home => {
-                while cursor > 0 && text_value[cursor - 1] != '\n' { cursor -= 1; }
-            }
-            KeyCode::End => {
-                while cursor < text_value.len() && text_value[cursor] != '\n' { cursor += 1; }
-            }
-            KeyCode::Up => {
-                let line_start = text_value[..cursor].iter().rposition(|c| *c == '\n').map(|i| i + 1).unwrap_or(0);
-                let col = cursor - line_start;
-                if line_start > 0 {
-                    let prev_end = line_start - 1;
-                    let prev_start = text_value[..prev_end].iter().rposition(|c| *c == '\n').map(|i| i + 1).unwrap_or(0);
-                    cursor = prev_start + col.min(prev_end - prev_start);
-                }
-            }
-            KeyCode::Down => {
-                let line_start = text_value[..cursor].iter().rposition(|c| *c == '\n').map(|i| i + 1).unwrap_or(0);
-                let col = cursor - line_start;
-                let line_end = text_value[cursor..].iter().position(|c| *c == '\n').map(|i| cursor + i).unwrap_or(text_value.len());
-                if line_end < text_value.len() {
-                    let next_start = line_end + 1;
-                    let next_end = text_value[next_start..].iter().position(|c| *c == '\n').map(|i| next_start + i).unwrap_or(text_value.len());
-                    cursor = next_start + col.min(next_end - next_start);
-                }
-            }
-            _ => {}
+        terminal::disable_raw_mode().ok();
+        println!();
+        println!("ghcap 0.24.1 - Commit Message");
+        println!("=== コミットメッセージ編集 ===");
+        println!("現在のメッセージ:");
+        println!("{}", initial);
+        println!();
+        println!("新しいコミットメッセージを入力してください。");
+        println!("Enter: Commit確認    :back: プリセット選択へ戻る");
+        print!("> ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let input = input.trim_end_matches(['\r', '\n']).to_string();
+        if input == ":back" {
+            enter_tui()?;
+            return Ok(CommitMessageDecision::BackToPresets);
+        }
+        let message = if input.is_empty() { initial.to_string() } else { input };
+        enter_tui()?;
+        match commit_confirm(lang)? {
+            CommitConfirm::Yes => return Ok(CommitMessageDecision::Commit(message)),
+            CommitConfirm::No => return Ok(CommitMessageDecision::BackToRepo),
+            CommitConfirm::Edit => return edit_commit_message_cui_reedit(lang, &message),
         }
     }
 }
