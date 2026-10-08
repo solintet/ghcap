@@ -1,6 +1,5 @@
 use crate::models::{Account, Repo};
-use serde_json::Value;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 fn gh(args: &[&str]) -> Result<String, String> {
     let output = Command::new("gh").args(args).output().map_err(|e| format!("gh: {e}"))?;
@@ -13,28 +12,34 @@ fn gh(args: &[&str]) -> Result<String, String> {
     }
 }
 
-pub fn available() -> bool {
-    Command::new("gh").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false)
-}
-
 pub fn accounts() -> Result<Vec<Account>, String> {
-    let raw = gh(&["auth", "status", "--json", "hosts"])?;
-    let value: Value = serde_json::from_str(&raw).map_err(|e| format!("gh auth JSON: {e}"))?;
+    let output = Command::new("gh")
+        .args(["auth", "status", "--hostname", "github.com"])
+        .output()
+        .map_err(|e| format!("gh auth status: {e}"))?;
+    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
+    if !output.stderr.is_empty() {
+        text.push('\n');
+        text.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+
     let mut accounts = Vec::new();
-    if let Some(hosts) = value.get("hosts").and_then(Value::as_object) {
-        if let Some(users) = hosts.get("github.com").and_then(Value::as_array) {
-            for user in users {
-                if let Some(login) = user.get("login").and_then(Value::as_str) {
-                    if !accounts.iter().any(|a: &Account| a.name == login) {
-                        accounts.push(Account { name: login.to_string(), token: String::new() });
-                    }
-                }
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let marker = "Logged in to github.com account ";
+        if let Some(rest) = trimmed.strip_prefix(marker) {
+            let login = rest.split_whitespace().next().unwrap_or("");
+            if !login.is_empty() && !accounts.iter().any(|a: &Account| a.name == login) {
+                accounts.push(Account { name: login.to_string(), token: String::new(), label: String::new() });
             }
         }
     }
+
     if accounts.is_empty() {
         let login = gh(&["api", "user", "--jq", ".login"])?;
-        if !login.is_empty() { accounts.push(Account { name: login, token: String::new() }); }
+        if !login.is_empty() {
+            accounts.push(Account { name: login, token: String::new(), label: String::new() });
+        }
     }
     Ok(accounts)
 }
@@ -57,23 +62,29 @@ pub fn clone(repo: &Repo, destination: &str) -> Result<String, String> {
     if destination.trim().is_empty() { gh(&["repo", "clone", &repo.full_name]) } else { gh(&["repo", "clone", &repo.full_name, destination]) }
 }
 
-pub fn verify(account: &Account) -> Result<String, String> {
-    let login = gh(&["api", "user", "--jq", ".login"])?;
-    if account.name.is_empty() || account.name == login { Ok(login) } else { Ok(login) }
-}
-
 pub fn repos(account: &Account) -> Result<Vec<Repo>, String> {
     let owner = if account.name.is_empty() { gh(&["api", "user", "--jq", ".login"])? } else { account.name.clone() };
-    let raw = gh(&["repo", "list", &owner, "--limit", "1000", "--json", "nameWithOwner,isPrivate,url,sshUrl"])?;
-    let value: Value = serde_json::from_str(&raw).map_err(|e| format!("GitHub JSON: {e}"))?;
-    let array = value.as_array().ok_or_else(|| "gh returned a non-array repository response".to_string())?;
-    Ok(array.iter().filter_map(|item| Some(Repo {
-        name: item.get("nameWithOwner")?.as_str()?.rsplit('/').next().unwrap_or("").to_string(),
-        full_name: item.get("nameWithOwner")?.as_str()?.to_string(),
-        clone_url: item.get("url").and_then(Value::as_str).unwrap_or("").to_string(),
-        ssh_url: item.get("sshUrl").and_then(Value::as_str).unwrap_or("").to_string(),
-        private: item.get("isPrivate").and_then(Value::as_bool).unwrap_or(false),
-    })).collect())
+    let raw = gh(&["repo", "list", &owner, "--limit", "1000"])?;
+    let mut repositories = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("Showing ") { continue; }
+        let name = trimmed.split_whitespace().next().unwrap_or("");
+        if name.is_empty() || name.eq_ignore_ascii_case("name") || name.eq_ignore_ascii_case("repository") { continue; }
+        let full_name = if name.contains('/') { name.to_string() } else { format!("{owner}/{name}") };
+        if !repositories.iter().any(|r: &Repo| r.full_name == full_name) {
+            let clone_url = format!("https://github.com/{full_name}.git");
+            let ssh_url = format!("git@github.com:{full_name}.git");
+            repositories.push(Repo {
+                name: name.rsplit('/').next().unwrap_or(name).to_string(),
+                full_name,
+                clone_url,
+                ssh_url,
+                private: false,
+            });
+        }
+    }
+    Ok(repositories)
 }
 
 pub fn register_gpg(armored: &str) -> Result<(), String> {

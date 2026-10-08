@@ -1,3 +1,38 @@
+ghcap (0.21.0-1) unstable; urgency=medium
+
+  * Redesign Commit message workflow around reusable presets and direct editing.
+  * Add multiline Commit message editing with Shift+Enter and Commit confirmation.
+  * Make Esc consistently return one screen at a time through Commit flow.
+  * Stop depending on gh auth status --json for account discovery.
+  * Keep actual Git/GitHub processing delegated to git and gh.
+
+ -- ghcap contributors <noreply@example.com>  Wed, 07 Oct 2026 15:30:00 +0900
+
+ghcap (0.17.0-1) unstable; urgency=medium
+
+  * Restore V0.13-style direct account selection and add keyboard-driven account management.
+  * Add keyboard-driven preset management with add, edit, delete and reorder actions.
+  * Add per-repository local Git folder setup and automatic git init/remote configuration.
+  * Automatically enter Git setup before Commit, Push and Commit & Push when required.
+  * Remember Clone destinations as repository Git folders.
+  * Add GPG setup recovery after signing failures with optional Push retry.
+  * Synchronize package/version references to 0.17.0.
+
+ -- ghcap contributors <noreply@example.com>  Wed, 07 Oct 2026 12:45:00 +0900
+
+ghcap (0.16.0-1) unstable; urgency=medium
+
+  * Removed all five Rust compiler warnings from the 0.13 build.
+  * Removed unused GitHub availability/verification and Git change helpers.
+  * Removed unused TUI parameter from message rendering.
+  * Made GPG registration use the active gh account without an unused account argument.
+  * Keep the GitHub device URL visible even when browser launch is unavailable.
+  * Do not show a success/exit-code CUI after successful GitHub login.
+  * Enforce zero Rust compiler warnings in the release build.
+  * Added Cargo dependency license inspection and BSD-2-Clause project licensing.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 16:00:00 +0900
+
 ghcap (0.13.0-1) unstable; urgency=medium
 
   * Fix Result<bool, _> versus Result<(), _> control-flow errors in CUI operations.

@@ -16,8 +16,8 @@ fn main() {
     if let Some(command) = args.get(1) {
         let code = match command.as_str() {
             "commitstop" | "pushstop" | "commitpushstop" => storage::send_stop(command),
-            "--version" | "-V" => { println!("ghcap 0.13.0"); 0 }
-            "--help" | "-h" => { println!("ghcap 0.13.0\nUsage: ghcap [commitstop|pushstop|commitpushstop]"); 0 }
+            "--version" | "-V" => { println!("ghcap 0.21.0"); 0 }
+            "--help" | "-h" => { println!("ghcap 0.21.0\nUsage: ghcap [commitstop|pushstop|commitpushstop]"); 0 }
             _ => { eprintln!("Unknown command: {command}"); 2 }
         };
         std::process::exit(code);
