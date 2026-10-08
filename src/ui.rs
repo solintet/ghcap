@@ -56,7 +56,7 @@ pub fn draw_menu(_t: &mut Tui, lang: &str, title: &str, items: &[String], select
     let outer_h = height.saturating_sub(2).max(4);
     draw_box(&mut stdout, 0, 0, outer_w, outer_h)?;
 
-    let header = format!(" ghcap 0.21.0 · {title} ");
+    let header = format!(" ghcap 0.22.0 · {title} ");
     execute!(stdout, MoveTo(2, 0), SetAttribute(Attribute::Bold), Print(truncate(&header, outer_w.saturating_sub(4) as usize)), SetAttribute(Attribute::Reset))?;
 
     let list_top = 2u16;
@@ -201,7 +201,7 @@ fn draw_commit_editor_cui(text_value: &[char], cursor: usize) -> io::Result<()> 
     let mut stdout = io::stdout();
     let (width, height) = terminal::size()?;
     execute!(stdout, Clear(ClearType::All), MoveTo(0, 0), SetAttribute(Attribute::Reset))?;
-    println!("ghcap 0.21.0 - Commit Message");
+    println!("ghcap 0.22.0 - Commit Message");
     println!("=== コミットメッセージ ===");
     println!();
 

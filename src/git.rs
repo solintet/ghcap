@@ -1,4 +1,4 @@
-use std::{path::Path, process::Command};
+use std::{io::{BufRead, BufReader}, path::Path, process::{Command, Stdio}, thread};
 
 pub fn git(args: &[&str]) -> Result<String, String> { git_in(None, args) }
 
@@ -13,6 +13,67 @@ pub fn git_in(dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Err(format!("{}\nexit code {}", if stderr.is_empty() { stdout } else { stderr }, output.status.code().unwrap_or(1)))
+    }
+}
+
+
+
+/// Run git while streaming stdout/stderr directly to the CUI and also retain
+/// the text for error classification (for example GPG failures).
+pub fn git_in_live(dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command.args(args);
+    if let Some(path) = dir { command.current_dir(path); }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(|e| format!("git: {e}"))?;
+    let stdout = child.stdout.take().ok_or_else(|| "git: failed to capture stdout".to_string())?;
+    let stderr = child.stderr.take().ok_or_else(|| "git: failed to capture stderr".to_string())?;
+
+    let out_thread = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut text = String::new();
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    println!("{line}");
+                    text.push_str(&line);
+                    text.push('\n');
+                }
+                Err(e) => {
+                    text.push_str(&format!("stdout read error: {e}\n"));
+                    break;
+                }
+            }
+        }
+        text
+    });
+    let err_thread = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        let mut text = String::new();
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    eprintln!("{line}");
+                    text.push_str(&line);
+                    text.push('\n');
+                }
+                Err(e) => {
+                    text.push_str(&format!("stderr read error: {e}\n"));
+                    break;
+                }
+            }
+        }
+        text
+    });
+
+    let status = child.wait().map_err(|e| format!("git: {e}"))?;
+    let stdout_text = out_thread.join().unwrap_or_default();
+    let stderr_text = err_thread.join().unwrap_or_default();
+    if status.success() {
+        Ok(String::new())
+    } else {
+        let combined = if stderr_text.trim().is_empty() { stdout_text.trim().to_string() } else { stderr_text.trim().to_string() };
+        Err(format!("{}\nexit code {}", combined, status.code().unwrap_or(1)))
     }
 }
 

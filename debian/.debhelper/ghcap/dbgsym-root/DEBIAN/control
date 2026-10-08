@@ -1,12 +1,12 @@
 Package: ghcap-dbgsym
 Source: ghcap
-Version: 0.21.0-1
+Version: 0.22.0-1
 Auto-Built-Package: debug-symbols
 Architecture: amd64
 Maintainer: ghcap contributors <noreply@example.com>
-Installed-Size: 456
-Depends: ghcap (= 0.21.0-1)
+Installed-Size: 474
+Depends: ghcap (= 0.22.0-1)
 Section: debug
 Priority: optional
 Description: debug symbols for ghcap
-Build-Ids: 225e443b52d22fdd21400871c898ea1c178bbd5a
+Build-Ids: 4e385a6ccc76e46b62ce86c938ee559b1c24e3d3

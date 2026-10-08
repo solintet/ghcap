@@ -29,25 +29,36 @@ fn shell(command: &str, dir: &Path) -> Result<(), String> {
 
 pub fn commit(msg: &str, dir: &Path) -> Result<String, String> {
     poll_stop(); if COMMIT_STOP.load(Ordering::SeqCst) || COMMIT_PUSH_STOP.load(Ordering::SeqCst) { return Ok("Commit cancelled.".into()); }
+
+    // Stage everything first. If there is still nothing staged afterwards,
+    // this is not a real commit failure; it simply means there is nothing to commit.
     git::git_in(Some(dir), &["add", "-A"])?;
+    let staged = git::git_in(Some(dir), &["diff", "--cached", "--quiet"]);
+    if staged.is_ok() {
+        return Ok("No changes to commit.".into());
+    }
+
     poll_stop(); if COMMIT_STOP.load(Ordering::SeqCst) || COMMIT_PUSH_STOP.load(Ordering::SeqCst) { return Ok("Commit cancelled.".into()); }
-    git::git_in(Some(dir), &["commit", "-m", msg])
+    git::git_in_live(Some(dir), &["commit", "-m", msg])
 }
 
 pub fn push(dir: &Path) -> Result<String, String> {
     poll_stop(); if PUSH_STOP.load(Ordering::SeqCst) || COMMIT_PUSH_STOP.load(Ordering::SeqCst) { return Ok("Push cancelled.".into()); }
-    git::git_in(Some(dir), &["push"])
+    git::git_in_live(Some(dir), &["push"])
 }
 
 pub fn commit_push(repo: &Repo, _config: &Config, msg: &str, dir: &Path) -> Result<String, String> {
     let repo_config = storage::load_repo_config(&repo.full_name);
     let shell_enabled = repo_config.pre_push_enabled && !repo_config.pre_push_command.trim().is_empty();
+    println!("[1/2] Commit");
     let commit_result = commit(msg, dir)?;
     if commit_result == "Commit cancelled." { return Ok(commit_result); }
+    if commit_result == "No changes to commit." { println!("No changes to commit. Commitをスキップします。"); }
     if shell_enabled {
         poll_stop(); if COMMIT_PUSH_STOP.load(Ordering::SeqCst) || PUSH_STOP.load(Ordering::SeqCst) { return Ok("Commit completed; Push cancelled.".into()); }
         shell(&repo_config.pre_push_command, dir).map_err(|e| format!("Pre-push shell failed; push cancelled: {e}"))?;
     }
+    println!("[2/2] Push");
     let push_result = push(dir)?;
     if push_result == "Push cancelled." { return Ok("Commit completed; Push cancelled.".into()); }
     Ok("Commit & Push completed.".into())

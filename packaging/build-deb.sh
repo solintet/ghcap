@@ -44,8 +44,8 @@ dpkg-buildpackage -us -uc -b
 OUT="/tmp/ghcap-debs"
 rm -rf "$OUT"
 mkdir -p "$OUT"
-for file in "$(dirname "$ROOT")"/ghcap_0.21.0-1_*.deb; do
+for file in "$(dirname "$ROOT")"/ghcap_0.22.0-1_*.deb; do
     [ -f "$file" ] && cp -f "$file" "$OUT/"
 done
 printf '%s\n' "Built packages copied to: $OUT"
-printf '%s\n' "Install with: sudo apt install $OUT/ghcap_0.21.0-1_amd64.deb"
+printf '%s\n' "Install with: sudo apt install $OUT/ghcap_0.22.0-1_amd64.deb"

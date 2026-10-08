@@ -1,4 +1,4 @@
-ghcap (0.21.0-1) unstable; urgency=medium
+ghcap (0.22.0-1) unstable; urgency=medium
 
   * Redesign Commit message workflow around reusable presets and direct editing.
   * Add multiline Commit message editing with Shift+Enter and Commit confirmation.
