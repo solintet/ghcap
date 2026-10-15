@@ -1,0 +1,188 @@
+ghcap (0.0.29.7-1) unstable; urgency=medium
+
+  * Integrate macOS build support into the main source tree.
+  * Add manually triggered GitHub Actions builds for Intel and Apple Silicon as separate artifacts.
+  * Keep Debian Linux and Windows cross-builds on the existing Debian build path.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 21:00:00 +0900
+
+ghcap (0.0.29.6-1) unstable; urgency=medium
+
+  * Install Arch package runtime dependencies in the container before makepkg.
+  * Avoid makepkg --syncdeps so the non-root build does not invoke sudo without a TTY.
+  * Let the Linux packaging stage finish so the Windows cross-build can run afterward.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 20:30:00 +0900
+
+ghcap (0.0.29.6-1) unstable; urgency=medium
+
+  * Separate macOS Universal Binary build tooling from the Debian/Windows/Linux release builder.
+  * Add dedicated macOS setup and Universal Binary build scripts.
+  * Remove macOS build requirements from the general release builder.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 20:00:00 +0900
+
+ghcap (0.0.29.4-1) unstable; urgency=medium
+
+  * Add Debian-hosted Windows x64 cross-compilation.
+  * Add macOS Universal Binary generation with an externally supplied macOS SDK.
+  * Generate Homebrew Formula and winget manifests from actual release artifact hashes.
+  * Produce a complete SHA-256 inventory for generated release artifacts.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 19:30:00 +0900
+
+ghcap (0.0.29.3-1) unstable; urgency=medium
+
+  * Fix RPM staging directory creation under POSIX /bin/sh.
+  * Set the Arch package architecture to match the actual host binary.
+  * Improve container-based Arch package build behavior.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 19:00:00 +0900
+
+ghcap (0.0.29.2-1) unstable; urgency=medium
+
+  * Add RPM, AppImage, and Arch Linux package generation from Debian.
+  * Keep all Linux release formats behind a shared validation and release build.
+  * Validate package metadata and generated archive contents.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 18:30:00 +0900
+
+ghcap (0.0.29.1-1) unstable; urgency=medium
+
+  * Build the Linux binary archive and Debian package from one validated release build.
+  * Stage the standalone .tar.gz with a predictable layout and SHA-256 checksum.
+  * Make package output paths explicit and fail if expected artifacts are missing.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 18:00:00 +0900
+
+ghcap (0.0.29.0-1) unstable; urgency=medium
+
+  * Check required Git, GitHub CLI, and GnuPG commands before starting the TUI.
+  * Show localized, OS-specific installation guidance when dependencies are missing.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 17:00:00 +0900
+
+ghcap (0.28.0-1) unstable; urgency=medium
+
+  * Replace GitHub Release y/n confirmation with Enter-to-continue and Ctrl-D cancellation.
+  * Display a periodic wait message while checking or creating/uploading GitHub Releases.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 16:30:00 +0900
+
+ghcap (0.27.4-1) unstable; urgency=medium
+
+  * Fix Clippy collapsible_match by moving GPG recovery and retry checks into the match guard.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 13:00:00 +0900
+
+ghcap (0.27.3-1) unstable; urgency=medium
+
+  * Fix strict Clippy warnings in app and UI code without changing workflows.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 12:30:00 +0900
+
+ghcap (0.27.2-1) unstable; urgency=medium
+
+  * Fix etcetera 0.10 API usage by calling choose_base_strategy instead of
+    the unavailable choose_native_strategy.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 10:30:00 +0900
+
+ghcap (0.27.0-1) unstable; urgency=medium
+
+  * Replace the custom JSON translation loader with rust-i18n while retaining Crowdin-compatible per-locale JSON files.
+  * Use walkdir for recursive Release staging-folder traversal without following symlinks.
+  * Read GitHub account and repository lists from machine-readable gh JSON output.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 10:00:00 +0900
+
+ghcap (0.26.1-1) unstable; urgency=medium
+
+  * Remove dependency license-check enforcement from packaging and CI.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 08:00:00 +0900
+
+ghcap (0.26.0-1) unstable; urgency=medium
+
+  * Add folder-based GitHub Release creation and asset upload.
+  * Correct SPDX license-expression handling for permissive OR alternatives.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 00:00:00 +0000
+
+ghcap (0.25.1-1) unstable; urgency=medium
+
+  * Replace directories with etcetera to remove the option-ext MPL-2.0
+    transitive dependency.
+  * Centralize locale lookup through the shared config-directory resolver.
+  * Preserve existing macOS Application Support data when upgrading.
+
+ -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 08:30:00 +0900
+
+ghcap (0.25.0-1) unstable; urgency=medium
+
+  * Replace hand-drawn TUI rendering with Ratatui/Crossterm widgets.
+  * Use Rustyline for editable prefilled commit messages and prompts.
+  * Use clap for CLI argument parsing and generated help/version output.
+  * Centralize captured git/gh/gpg process execution behind duct.
+  * Use directories for cross-platform config/data directory discovery.
+  * Report malformed JSON instead of silently replacing it with defaults.
+  * Keep GitHub authentication and repository operations delegated to gh.
+
+ -- ghcap contributors <noreply@example.com>  Wed, 14 Oct 2026 20:45:00 +0900
+
+ -- ghcap contributors <noreply@example.com>  Wed, 07 Oct 2026 15:30:00 +0900
+
+ghcap (0.17.0-1) unstable; urgency=medium
+
+  * Restore V0.13-style direct account selection and add keyboard-driven account management.
+  * Add keyboard-driven preset management with add, edit, delete and reorder actions.
+  * Add per-repository local Git folder setup and automatic git init/remote configuration.
+  * Automatically enter Git setup before Commit, Push and Commit & Push when required.
+  * Remember Clone destinations as repository Git folders.
+  * Add GPG setup recovery after signing failures with optional Push retry.
+  * Synchronize package/version references to 0.17.0.
+
+ -- ghcap contributors <noreply@example.com>  Wed, 07 Oct 2026 12:45:00 +0900
+
+ghcap (0.16.0-1) unstable; urgency=medium
+
+  * Removed all five Rust compiler warnings from the 0.13 build.
+  * Removed unused GitHub availability/verification and Git change helpers.
+  * Removed unused TUI parameter from message rendering.
+  * Made GPG registration use the active gh account without an unused account argument.
+  * Keep the GitHub device URL visible even when browser launch is unavailable.
+  * Do not show a success/exit-code CUI after successful GitHub login.
+  * Enforce zero Rust compiler warnings in the release build.
+  * Added Cargo dependency license inspection and BSD-2-Clause project licensing.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 16:00:00 +0900
+
+ghcap (0.13.0-1) unstable; urgency=medium
+
+  * Fix Result<bool, _> versus Result<(), _> control-flow errors in CUI operations.
+  * Keep repository clone as a repository-level action.
+  * Add unit tests for GitHub remote URL parsing.
+  * Keep the login URL visible before invoking gh auth login.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 15:00:00 +0900
+
+ghcap (0.12.0-1) unstable; urgency=medium
+
+  * Moved Clone into each repository menu instead of the Home menu.
+  * Switched processing prompts and operation results from TUI dialogs to CUI.
+  * Always display the GitHub device login URL before starting browser/device authentication.
+  * Display process exit codes on operation failures where available.
+  * Kept GitHub authentication and cloning based on the gh CLI.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 15:30:00 +0900
+
+ghcap (0.12.0-1) unstable; urgency=medium
+
+  * Fixed the build pipeline so cargo-fmt is optional when only the Debian Rust compiler is installed.
+  * Added cargo check and cargo test validation before the release build.
+  * Kept Cargo.lock based reproducible dependency resolution without guessed transitive versions.
+  * Retained gh CLI based GitHub authentication and repository cloning.
+  * Retained local Git repository auto-detection and deterministic TUI rendering.
+  * Updated displayed version to 0.12.0.
+
+ -- ghcap contributors <noreply@example.com>  Tue, 06 Oct 2026 15:00:00 +0900

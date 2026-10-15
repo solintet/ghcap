@@ -1,0 +1,14 @@
+Source: ghcap
+Section: utils
+Priority: optional
+Maintainer: ghcap contributors <noreply@example.com>
+Build-Depends: debhelper-compat (= 13), cargo, rustc, python3
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: ghcap
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, git, gh, gpg
+Description: GitHub Committer and Pusher TUI
+ Cross-platform terminal UI for GitHub account, repository, commit, push, GPG,
+ presets and repository-specific pre-push workflows.
