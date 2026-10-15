@@ -1,4 +1,4 @@
-ghcap (0.0.29.7-1) unstable; urgency=medium
+ghcap (0.0.29.8-1) unstable; urgency=medium
 
   * Integrate macOS build support into the main source tree.
   * Add manually triggered GitHub Actions builds for Intel and Apple Silicon as separate artifacts.

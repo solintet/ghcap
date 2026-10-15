@@ -24,8 +24,8 @@ The script needs network access for Cargo dependency resolution, AppImage tool r
 
 macOS builds are integrated into this same source tree but are **not** part of the default push/PR CI or Debian build. In GitHub, open **Actions → Build macOS → Run workflow** and select `intel`, `apple-silicon`, or `both`. Each architecture is built on a matching GitHub-hosted macOS runner and uploaded as a separate artifact; no Universal Binary is created.
 
-- Intel: `ghcap-v0.0.29.7-macos-intel.tar.gz`
-- Apple Silicon: `ghcap-v0.0.29.7-macos-apple-silicon.tar.gz`
+- Intel: `ghcap-v0.0.29.8-macos-intel.tar.gz`
+- Apple Silicon: `ghcap-v0.0.29.8-macos-apple-silicon.tar.gz`
 
 The local helper `./packaging/build-macos.sh intel` or `./packaging/build-macos.sh apple-silicon` must be run on the matching Mac architecture. `./packaging/setup-macos.sh` checks/installs the local Rust prerequisites. GitHub Actions uses the same build helper and requires no macOS SDK on Debian.
 

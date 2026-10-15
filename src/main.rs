@@ -24,7 +24,7 @@ use std::io;
 #[derive(Parser)]
 #[command(
     name = "ghcap",
-    version = "0.0.29.7",
+    version = "0.0.29.8",
     about = "Cross-platform GitHub commit/push workflow TUI"
 )]
 struct Cli {

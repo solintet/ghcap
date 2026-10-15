@@ -447,7 +447,7 @@ dependencies = [
 
 [[package]]
 name = "ghcap"
-version = "0.29.7"
+version = "0.29.8"
 dependencies = [
  "anyhow",
  "clap",

@@ -46,7 +46,7 @@ pub fn draw_menu(
     t.terminal.draw(|frame| {
         let area = frame.area();
         let outer = Block::default()
-            .title(format!(" ghcap 0.0.29.7 · {title} "))
+            .title(format!(" ghcap 0.0.29.8 · {title} "))
             .borders(Borders::ALL);
         let inner = outer.inner(area);
         frame.render_widget(outer, area);
@@ -223,7 +223,7 @@ pub fn edit_commit_message(
     let mut current = initial.to_string();
     loop {
         leave_tui()?;
-        println!("\nghcap 0.0.29.7 - Commit Message\n=== コミットメッセージ ===\n");
+        println!("\nghcap 0.0.29.8 - Commit Message\n=== コミットメッセージ ===\n");
         println!("プリセット内容は入力欄に事前入力されています。\\n は改行として扱われます。空欄のままEnterを押すと初期値を維持します。\n:back と入力するとプリセット選択へ戻ります。\n");
         let edited_result = readline_initial("> ", &current);
         let edited = match edited_result {

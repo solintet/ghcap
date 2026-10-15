@@ -4,8 +4,8 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-RELEASE_VERSION="0.0.29.7"
-CARGO_VERSION="0.29.7"
+RELEASE_VERSION="0.0.29.8"
+CARGO_VERSION="0.29.8"
 DIST="$ROOT/dist"
 ARCH_RAW="$(dpkg --print-architecture 2>/dev/null || uname -m)"
 case "$ARCH_RAW" in

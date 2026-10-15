@@ -1,4 +1,4 @@
-# ghcap 0.0.29.7
+# ghcap 0.0.29.8
 
 ghcap is a cross-platform terminal workflow manager for GitHub repositories. It delegates GitHub operations to the official `gh` CLI, Git operations to `git`, and signing-key operations to `gpg`; ghcap does not implement GitHub authentication or Git internals itself.
 
@@ -46,7 +46,7 @@ On Debian/Ubuntu, `./packaging/build-linux.sh` generates Linux packages. `./pack
 
 ## Cross-platform scope
 
-The Debian release pipeline targets Linux and Windows. macOS builds are available on demand through `.github/workflows/build-macos.yml`, with separate Intel and Apple Silicon jobs. The macOS workflow is manual-only and is not triggered by normal pushes or pull requests. Real GitHub workflows also require compatible versions of `git` and `gh` on the host. CI builds do not replace end-to-end testing against real accounts and repositories.
+The macOS CI workflow at `.github/workflows/macos-ci.yml` runs on pushes, pull requests, and manual dispatch. It builds, tests, and packages separate Intel and Apple Silicon binaries on native macOS runners, then uploads the archives and SHA-256 checksums as workflow artifacts. Linux and Windows workflows are not included in this macOS-only CI configuration. Real GitHub workflows also require compatible versions of `git` and `gh` on the host. CI builds do not replace end-to-end testing against real accounts and repositories.
 
 ## License
 
@@ -55,7 +55,7 @@ BSD-2-Clause. Third-party crates retain their own licenses. The newly added dire
 
 See [RELEASE_WORKFLOW_PLAN.md](RELEASE_WORKFLOW_PLAN.md) for the planned build/export-to-GitHub-Release workflow.
 
-> Version note: the public release tag and displayed application version are `v0.0.29.7`. Cargo package metadata uses `0.29.7` because Cargo requires a three-component SemVer package version; the CLI explicitly displays the requested four-component release version.
+> Version note: the public release tag and displayed application version are `v0.0.29.8`. Cargo package metadata uses `0.29.8` because Cargo requires a three-component SemVer package version; the CLI explicitly displays the requested four-component release version.
 
 ## Required external tools
 

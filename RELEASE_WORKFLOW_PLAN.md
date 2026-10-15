@@ -1,4 +1,4 @@
-# GitHub Release folder workflow (implemented in v0.26.0; Enter-to-continue confirmation and wait messages added in v0.0.29.7)
+# GitHub Release folder workflow (implemented in v0.26.0; Enter-to-continue confirmation and wait messages added in v0.0.29.8)
 
 Select **GitHub Release (folder upload)** from a repository menu and enter a staging directory. Relative paths are created under the configured local repository folder; the default is `release-staging`. ghcap creates the folder if it does not exist. Put a non-empty `release-notes.md` at its root, then put all release files in the folder.
 
