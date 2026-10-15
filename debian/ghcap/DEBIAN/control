@@ -1,11 +1,11 @@
 Package: ghcap
-Version: 0.24.1-1
+Version: 0.27.4-1
 Architecture: amd64
 Maintainer: ghcap contributors <noreply@example.com>
-Installed-Size: 1066
+Installed-Size: 2196
 Depends: libc6 (>= 2.39), libgcc-s1 (>= 4.2), git, gh, gpg
 Section: utils
 Priority: optional
 Description: GitHub Committer and Pusher TUI
- Terminal UI for GitHub account, repository, commit, push, GPG,
+ Cross-platform terminal UI for GitHub account, repository, commit, push, GPG,
  presets and repository-specific pre-push workflows.

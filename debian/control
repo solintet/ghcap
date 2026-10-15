@@ -9,5 +9,5 @@ Package: ghcap
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, git, gh, gpg
 Description: GitHub Committer and Pusher TUI
- Terminal UI for GitHub account, repository, commit, push, GPG,
+ Cross-platform terminal UI for GitHub account, repository, commit, push, GPG,
  presets and repository-specific pre-push workflows.

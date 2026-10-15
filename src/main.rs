@@ -1,3 +1,5 @@
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod actions;
 mod app;
 mod git;
@@ -5,50 +7,69 @@ mod github;
 mod gpg;
 mod i18n;
 mod models;
+mod process;
+mod release;
 mod storage;
 mod ui;
 
+use clap::{Parser, Subcommand};
 use crossterm::{cursor::Hide, execute, terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}};
 use std::io;
 
+#[derive(Parser)]
+#[command(name = "ghcap", version, about = "Cross-platform GitHub commit/push workflow TUI")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+}
+
+#[derive(Subcommand)]
+enum CliCommand {
+    /// Ask the running ghcap instance to stop Commit.
+    Commitstop,
+    /// Ask the running ghcap instance to stop Push.
+    Pushstop,
+    /// Ask the running ghcap instance to stop Commit & Push.
+    Commitpushstop,
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if let Some(command) = args.get(1) {
-        let code = match command.as_str() {
-            "commitstop" | "pushstop" | "commitpushstop" => storage::send_stop(command),
-            "--version" | "-V" => { println!("ghcap 0.24.1"); 0 }
-            "--help" | "-h" => { println!("ghcap 0.24.1\nUsage: ghcap [commitstop|pushstop|commitpushstop]"); 0 }
-            _ => { eprintln!("Unknown command: {command}"); 2 }
+    if let Err(error) = run() {
+        eprintln!("ghcap: {error:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    if let Some(command) = cli.command {
+        let name = match command {
+            CliCommand::Commitstop => "commitstop",
+            CliCommand::Pushstop => "pushstop",
+            CliCommand::Commitpushstop => "commitpushstop",
         };
-        std::process::exit(code);
+        std::process::exit(storage::send_stop(name));
     }
 
-    let config = match storage::load_config() {
-        Ok(c) => c,
-        Err(e) => { eprintln!("ghcap: cannot load configuration: {e}"); return; }
-    };
-    if let Err(e) = storage::save_config(&config) {
-        eprintln!("ghcap: cannot save configuration: {e}"); return;
-    }
-    if let Err(e) = storage::init_instance() {
-        eprintln!("ghcap: cannot initialize runtime state: {e}"); return;
-    }
+    let config = storage::load_config()?;
+    storage::save_config(&config)?;
+    storage::init_instance()?;
 
     let setup = enable_raw_mode().and_then(|_| execute!(io::stdout(), EnterAlternateScreen, Hide));
-    if let Err(e) = setup {
+    if let Err(error) = setup {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, crossterm::cursor::Show);
         storage::clear_instance();
-        eprintln!("ghcap: terminal setup failed: {e}");
-        return;
+        anyhow::bail!("terminal setup failed: {error}");
     }
 
     let result = match ui::terminal() {
-        Ok(mut terminal) => app::run(config, &mut terminal),
-        Err(e) => Err(e),
+        Ok(mut terminal) => app::run(config, &mut terminal).map_err(anyhow::Error::from),
+        Err(error) => Err(anyhow::Error::from(error)),
     };
 
     let _ = disable_raw_mode();
     let _ = execute!(io::stdout(), LeaveAlternateScreen, crossterm::cursor::Show);
     storage::clear_instance();
-
-    if let Err(e) = result { eprintln!("ghcap error: {e}"); }
+    result
 }

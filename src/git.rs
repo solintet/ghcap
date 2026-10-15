@@ -1,19 +1,11 @@
 use std::{io::{BufRead, BufReader}, path::Path, process::{Command, Stdio}, sync::mpsc::{self, RecvTimeoutError}, thread, time::Duration};
+use crate::process;
 
 pub fn git(args: &[&str]) -> Result<String, String> { git_in(None, args) }
 
 pub fn git_in(dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
-    command.args(args);
-    if let Some(path) = dir { command.current_dir(path); }
-    let output = command.output().map_err(|e| format!("git: {e}"))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Err(format!("{}\nexit code {}", if stderr.is_empty() { stdout } else { stderr }, output.status.code().unwrap_or(1)))
-    }
+    let output = process::capture("git", args, dir)?;
+    if output.success { Ok(output.stdout.trim().to_string()) } else { Err(process::failure("git", &output)) }
 }
 
 

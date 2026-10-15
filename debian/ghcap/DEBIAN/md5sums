@@ -1,7 +1,7 @@
-9ff599878d2c60ab584ab0c54c07dfc6  usr/bin/ghcap
-3aed8c02dd8e2fab10d8e8303e8669f5  usr/share/doc/ghcap/changelog.Debian.gz
+c41bad93996ba75d8caa2e62969052a3  usr/bin/ghcap
+f2d61f8d391aba8ef5a857abf1a78ef4  usr/share/doc/ghcap/changelog.Debian.gz
 7206baf11554f11431484998c8c208cd  usr/share/doc/ghcap/copyright
-6818c0217505792018c8c3294337139c  usr/share/ghcap/locales/en.json
-0fc55b6b5fca1edf53fa8b457a589a88  usr/share/ghcap/locales/ja.json
-4ca9b231e82586c705ae2e376ce49e61  usr/share/ghcap/locales/ko.json
-8dd10b1a09045259884f107f55389508  usr/share/ghcap/locales/zh-CN.json
+69e77842c910e19aec04367539b12aad  usr/share/ghcap/locales/en.json
+abe2964e1f738b058745477fa5d2de4f  usr/share/ghcap/locales/ja.json
+f37f8f613edc4aca50f7925a26f6370b  usr/share/ghcap/locales/ko.json
+14bc0bbb48ca9276992b1704e8484544  usr/share/ghcap/locales/zh-CN.json

@@ -1,94 +1,56 @@
-# ghcap 0.24.1
+# ghcap 0.27.4
 
-ghcap is a terminal UI for practical GitHub commit/push workflows.
+ghcap is a cross-platform terminal workflow manager for GitHub repositories. It delegates GitHub operations to the official `gh` CLI, Git operations to `git`, and signing-key operations to `gpg`; ghcap does not implement GitHub authentication or Git internals itself.
 
-## V0.22 focus
+## Architecture
 
-V0.22 keeps the stable crossterm renderer and moves GitHub authentication/repository operations behind the official `gh` CLI. It also adds repository cloning and keeps the local-repository auto-detection flow.
+- **Ratatui + Crossterm:** terminal layout, widgets, redraws and cross-platform terminal events.
+- **Rustyline:** line editing, including prefilled commit-message presets and ordinary prompts. Commit message line breaks are entered as literal `\n`.
+- **clap:** CLI parsing, generated help and version output.
+- **duct:** shared captured subprocess execution for `git`, `gh` and `gpg`; the live-output Git path remains streamed so progress output and GPG/network diagnostics stay visible.
+- **etcetera:** OS-appropriate config/data directory resolution without the `option-ext` MPL-2.0 dependency.
+- **Serde / serde_json:** typed config serialization and machine-readable `gh` JSON responses. Invalid config JSON is reported instead of silently replaced by defaults.
+- **rust-i18n:** compile-time localization with the existing per-language JSON files retained for Crowdin; runtime language selection and English fallback use the library.
+- **walkdir:** cross-platform recursive Release staging-folder traversal, without following symbolic links.
+- **anyhow:** top-level error context.
 
-### Dependency design
-
-The TUI renderer now uses `crossterm` directly. Ratatui was removed because its dependency chain introduced `instability`/`darling` version resolution that was incompatible with the project's Rust 1.85 baseline. ghcap does not need a widget framework to render its relatively small menu system.
-
-The build script deliberately does **not** run `cargo update -p ...` for transitive crates. If `Cargo.lock` exists, it is honored with `cargo build --locked`; otherwise Cargo generates it once for the source tree and the build immediately uses that lockfile.
+The app-specific code remains responsible for workflows that are unique to ghcap: account/preset management, repository association, menu navigation, and Commit/Push sequencing.
 
 ## Features
-- Commit/Push execution shows `Running... Please wait.` once per second while Git is silent.
-- Commit messages use literal `\n` for line breaks; ghcap converts it to an actual newline only when invoking Git.
-- Preset management includes a visible `プリセットを追加` row in addition to the keyboard shortcut.
 
-- Modular Rust source rather than a monolithic `main.rs`.
-- Bounded crossterm TUI layout with scrolling selection.
-- Four JSON locales: English, Japanese, Simplified Chinese and Korean.
-- Runtime language switching with English fallback for missing keys.
-- GitHub authentication through the official `gh` CLI browser/device login flow.
-- Authenticated GitHub account detection without storing a Personal Access Token.
-- GitHub repository listing and selection through `gh`.
-- Repository cloning through `gh repo clone`.
-- Current local Git repository detection and GitHub remote parsing.
-- Real commit, push and commit & push operations through `git`.
-- Commit presets: add, edit, reorder, delete and repository selection.
-- Repository-specific pre-push shell configuration.
-- Stop commands: `commitstop`, `pushstop`, `commitpushstop`.
-- GPG key listing, generation and GitHub registration.
-- Atomic JSON configuration writes.
+- Multiple GitHub accounts, account labels, selection, add/edit/delete/reorder.
+- Repository listing and cloning through `gh`, using JSON output rather than parsing human-readable tables.
+- GitHub account discovery uses `gh auth status --json hosts` rather than parsing human-readable status lines.
+- Local Git repository detection, initialization, origin and identity setup.
+- Commit presets and repository-specific pre-push hooks.
+- Commit, Push, and Commit & Push through `git`.
+- GitHub Release creation from a staging folder: reads `release-notes.md`, recursively uploads all other regular files, and supports Release / Pre-release / Draft. Existing release uploads never use `--clobber`.
+- One-second `Running... Please wait.` heartbeat during silent live Git commands.
+- GPG key listing/generation/registration and recovery after signing failures.
+- Japanese, English, Korean, and Simplified Chinese translations.
+- Stop commands: `ghcap commitstop`, `ghcap pushstop`, `ghcap commitpushstop`.
+- Atomic config writes and preservation of malformed config files for manual recovery.
 
-## Build on Debian
+## Build
 
-The project declares Rust 1.85 as its baseline.
+Requires Rust 1.85 or newer, plus `git`, GitHub CLI (`gh`), and optionally `gpg` for signing-key operations.
 
 ```sh
-chmod +x packaging/build-deb.sh
-./packaging/build-deb.sh
-
-# The script also copies the generated packages to /tmp/ghcap-debs.
-sudo apt install /tmp/ghcap-debs/ghcap_0.24.1-1_amd64.deb
+cargo generate-lockfile
+cargo check --all-targets --locked
+cargo test --all-targets --locked
+cargo build --release --locked
 ```
 
-The resulting `.deb` is written to the parent directory of the source tree by `dpkg-buildpackage`.
+On Debian, use `packaging/build-deb.sh` to build a `.deb` package.
 
-## Runtime
+## Cross-platform scope
 
-```sh
-ghcap
-```
-
-Stop commands can be sent from another terminal while ghcap is running:
-
-```sh
-ghcap commitstop
-ghcap pushstop
-ghcap commitpushstop
-```
-
-## Localization
-
-Translations are JSON files under `locales/` and are installed under `/usr/share/ghcap/locales/`. Built-in copies are compiled into the binary, so the application still has translations if the installed locale directory is unavailable. User overrides can be placed under the ghcap configuration directory.
-
-## Version policy
-
-This is **V0.22**, not V1.0.
-
+The Rust/TUI/config layers target Linux, Windows, and macOS. Real GitHub workflows also require compatible versions of `git` and `gh` on the host. CI builds on all three OS families are still required before claiming release-level support; the source architecture alone does not prove every OS has passed end-to-end tests.
 
 ## License
 
-ghcap is released under the BSD-2-Clause License. See `LICENSE`. Third-party dependencies retain their respective licenses. The release build checks Cargo dependency license metadata and rejects forbidden copyleft/non-commercial licenses.
+BSD-2-Clause. Third-party crates retain their own licenses. The newly added direct dependencies `rust-i18n` (MIT) and `walkdir` (MIT or Unlicense) do not use GPL/MPL licensing. The complete transitive dependency graph still needs a Cargo-based license audit before redistribution.
 
-## V0.22 changes
 
-- Account selection returns to the V0.13-style direct Enter-to-open behavior.
-- Accounts and presets support TUI key operations: `a` add, `e` edit, `d` delete, `Shift+↑/↓` reorder.
-- Accounts can have a local display label without changing the GitHub login name.
-- Each repository can store its local Git folder.
-- If the configured folder has no `.git`, ghcap initializes it automatically.
-- The repository GitHub `origin` remote is configured automatically during Git setup.
-- Commit, Push and Commit & Push automatically enter Git setup when the repository has not been prepared, then return to the requested operation.
-- Clone records the cloned local folder as the repository's Git folder.
-- GPG signing failures can enter GPG key registration/setup from the failed operation. After setup, ghcap asks whether to retry Push.
-- Release package/version references are synchronized to 0.24.1.
-- Commit starts directly from the preset list; there is no redundant message-selection screen.
-- Selecting a preset opens a direct CUI editor with the preset text already inserted.
-- Shift+Enter inserts a newline; Enter opens Commit confirmation.
-- Commit confirmation supports Yes, No (return to repository screen), and Edit (return to the editor).
-- Esc returns exactly one screen at a time throughout the Commit workflow.
-- GitHub account discovery uses normal `gh auth status` output rather than requiring `--json`.
+See [RELEASE_WORKFLOW_PLAN.md](RELEASE_WORKFLOW_PLAN.md) for the planned build/export-to-GitHub-Release workflow.

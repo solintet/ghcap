@@ -1,36 +1,25 @@
-use crate::models::{Account, Repo};
+use crate::{models::{Account, Repo}, process};
 use std::process::Command;
+use serde_json::Value;
 
 fn gh(args: &[&str]) -> Result<String, String> {
-    let output = Command::new("gh").args(args).output().map_err(|e| format!("gh: {e}"))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Err(format!("{}\nexit code {}", if stderr.is_empty() { stdout } else { stderr }, output.status.code().unwrap_or(1)))
-    }
+    let output = process::capture("gh", args, None)?;
+    if output.success { Ok(output.stdout.trim().to_string()) } else { Err(process::failure("gh", &output)) }
 }
 
 pub fn accounts() -> Result<Vec<Account>, String> {
-    let output = Command::new("gh")
-        .args(["auth", "status", "--hostname", "github.com"])
-        .output()
-        .map_err(|e| format!("gh auth status: {e}"))?;
-    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
-    if !output.stderr.is_empty() {
-        text.push('\n');
-        text.push_str(&String::from_utf8_lossy(&output.stderr));
-    }
-
+    let output = process::capture("gh", &["auth", "status", "--json", "hosts"], None)?;
     let mut accounts = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        let marker = "Logged in to github.com account ";
-        if let Some(rest) = trimmed.strip_prefix(marker) {
-            let login = rest.split_whitespace().next().unwrap_or("");
-            if !login.is_empty() && !accounts.iter().any(|a: &Account| a.name == login) {
-                accounts.push(Account { name: login.to_string(), token: String::new(), label: String::new() });
+    if let Ok(value) = serde_json::from_str::<Value>(&output.stdout) {
+        if let Some(hosts) = value.get("hosts").and_then(Value::as_object) {
+            if let Some(users) = hosts.get("github.com").and_then(Value::as_array) {
+                for user in users {
+                    let Some(login) = user.get("login").and_then(Value::as_str) else { continue; };
+                    if login.is_empty() || accounts.iter().any(|account: &Account| account.name == login) {
+                        continue;
+                    }
+                    accounts.push(Account { name: login.to_owned(), token: String::new(), label: String::new() });
+                }
             }
         }
     }
@@ -45,11 +34,8 @@ pub fn accounts() -> Result<Vec<Account>, String> {
 }
 
 pub fn switch_account(login: &str) -> Result<(), String> {
-    let status = Command::new("gh")
-        .args(["auth", "switch", "--hostname", "github.com", "--user", login])
-        .status()
-        .map_err(|e| format!("gh auth switch: {e}"))?;
-    if status.success() { Ok(()) } else { Err(format!("gh auth switch failed\nexit code {}", status.code().unwrap_or(1))) }
+    let output = process::capture("gh", &["auth", "switch", "--hostname", "github.com", "--user", login], None)?;
+    if output.success { Ok(()) } else { Err(process::failure("gh auth switch", &output)) }
 }
 
 pub fn login_command() -> Command {
@@ -64,33 +50,36 @@ pub fn clone(repo: &Repo, destination: &str) -> Result<String, String> {
 
 pub fn repos(account: &Account) -> Result<Vec<Repo>, String> {
     let owner = if account.name.is_empty() { gh(&["api", "user", "--jq", ".login"])? } else { account.name.clone() };
-    let raw = gh(&["repo", "list", &owner, "--limit", "1000"])?;
-    let mut repositories = Vec::new();
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("Showing ") { continue; }
-        let name = trimmed.split_whitespace().next().unwrap_or("");
-        if name.is_empty() || name.eq_ignore_ascii_case("name") || name.eq_ignore_ascii_case("repository") { continue; }
-        let full_name = if name.contains('/') { name.to_string() } else { format!("{owner}/{name}") };
-        if !repositories.iter().any(|r: &Repo| r.full_name == full_name) {
-            let clone_url = format!("https://github.com/{full_name}.git");
-            let ssh_url = format!("git@github.com:{full_name}.git");
-            repositories.push(Repo {
-                name: name.rsplit('/').next().unwrap_or(name).to_string(),
-                full_name,
-                clone_url,
-                ssh_url,
-                private: false,
-            });
-        }
+    let raw = gh(&["repo", "list", &owner, "--limit", "1000", "--json", "name,nameWithOwner,url,sshUrl,isPrivate"])?;
+    let value: Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("Could not parse GitHub repository JSON: {error}"))?;
+    let rows = value.as_array().ok_or_else(|| "GitHub repository response was not a JSON array".to_string())?;
+    let mut repositories = Vec::with_capacity(rows.len());
+    for row in rows {
+        let full_name = row.get("nameWithOwner").and_then(Value::as_str).unwrap_or("").trim();
+        if full_name.is_empty() { continue; }
+        let name = row.get("name").and_then(Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| full_name.rsplit('/').next().unwrap_or(full_name).to_owned());
+        let web_url = row.get("url").and_then(Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("https://github.com/{full_name}"));
+        let clone_url = if web_url.ends_with(".git") { web_url } else { format!("{web_url}.git") };
+        let ssh_url = row.get("sshUrl").and_then(Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("git@github.com:{full_name}.git"));
+        repositories.push(Repo {
+            name,
+            full_name: full_name.to_owned(),
+            clone_url,
+            ssh_url,
+            private: row.get("isPrivate").and_then(Value::as_bool).unwrap_or(false),
+        });
     }
     Ok(repositories)
 }
 
 pub fn register_gpg(armored: &str) -> Result<(), String> {
-    let result = Command::new("gh")
-        .args(["api", "user/gpg_keys", "--method", "POST", "-f", &format!("armored_public_key={armored}")])
-        .output()
-        .map_err(|e| format!("gh api: {e}"))?;
-    if result.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&result.stderr).trim().to_string()) }
+    let output = process::capture("gh", &["api", "user/gpg_keys", "--method", "POST", "-f", &format!("armored_public_key={armored}")], None)?;
+    if output.success { Ok(()) } else { Err(process::failure("gh api", &output)) }
 }

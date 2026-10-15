@@ -1,17 +1,16 @@
-use crate::github;
-use std::process::Command;
+use crate::{github, process};
 
 pub fn list_secret() -> Result<String, String> {
-    let output = Command::new("gpg").args(["--list-secret-keys", "--keyid-format", "LONG"]).output().map_err(|e| e.to_string())?;
-    if output.status.success() { Ok(String::from_utf8_lossy(&output.stdout).into()) } else { Err(format!("{}\nexit code {}", String::from_utf8_lossy(&output.stderr).trim(), output.status.code().unwrap_or(1))) }
+    let output = process::capture("gpg", &["--list-secret-keys", "--keyid-format", "LONG"], None)?;
+    if output.success { Ok(output.stdout) } else { Err(process::failure("gpg", &output)) }
 }
 
 pub fn secret_keys() -> Result<Vec<(String, String)>, String> {
-    let output = Command::new("gpg").args(["--list-secret-keys", "--with-colons", "--keyid-format", "LONG"]).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { return Err(format!("{}\nexit code {}", String::from_utf8_lossy(&output.stderr).trim(), output.status.code().unwrap_or(1))); }
+    let output = process::capture("gpg", &["--list-secret-keys", "--with-colons", "--keyid-format", "LONG"], None)?;
+    if !output.success { return Err(process::failure("gpg", &output)); }
     let mut result = Vec::new();
     let mut current_key = None;
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+    for line in output.stdout.lines() {
         let fields: Vec<_> = line.split(':').collect();
         match fields.first().copied() {
             Some("sec") => current_key = fields.get(4).map(|v| (*v).to_string()),
@@ -24,13 +23,13 @@ pub fn secret_keys() -> Result<Vec<(String, String)>, String> {
 }
 
 pub fn generate(uid: &str) -> Result<(), String> {
-    let output = Command::new("gpg").args(["--batch", "--quick-generate-key", uid, "ed25519", "sign", "1y"]).output().map_err(|e| e.to_string())?;
-    if output.status.success() { Ok(()) } else { Err(format!("{}\nexit code {}", String::from_utf8_lossy(&output.stderr).trim(), output.status.code().unwrap_or(1))) }
+    let output = process::capture("gpg", &["--batch", "--quick-generate-key", uid, "ed25519", "sign", "1y"], None)?;
+    if output.success { Ok(()) } else { Err(process::failure("gpg", &output)) }
 }
 
 pub fn export_armored(keyid: &str) -> Result<String, String> {
-    let output = Command::new("gpg").args(["--armor", "--export", keyid]).output().map_err(|e| e.to_string())?;
-    if output.status.success() { Ok(String::from_utf8_lossy(&output.stdout).into()) } else { Err(format!("{}\nexit code {}", String::from_utf8_lossy(&output.stderr).trim(), output.status.code().unwrap_or(1))) }
+    let output = process::capture("gpg", &["--armor", "--export", keyid], None)?;
+    if output.success { Ok(output.stdout) } else { Err(process::failure("gpg", &output)) }
 }
 
 pub fn register_key(keyid: &str) -> Result<(), String> { github::register_gpg(&export_armored(keyid)?) }

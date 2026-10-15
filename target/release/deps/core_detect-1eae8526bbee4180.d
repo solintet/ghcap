@@ -1,0 +1,11 @@
+/home/yellowpc/ダウンロード/ghcap-v0.27.4/target/release/deps/core_detect-1eae8526bbee4180.d: /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/lib.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/macros.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/arch/x86.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/os/x86.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/cache.rs
+
+/home/yellowpc/ダウンロード/ghcap-v0.27.4/target/release/deps/libcore_detect-1eae8526bbee4180.rlib: /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/lib.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/macros.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/arch/x86.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/os/x86.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/cache.rs
+
+/home/yellowpc/ダウンロード/ghcap-v0.27.4/target/release/deps/libcore_detect-1eae8526bbee4180.rmeta: /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/lib.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/macros.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/arch/x86.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/os/x86.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/cache.rs
+
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/lib.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/macros.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/arch/x86.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/os/x86.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/core_detect-1.0.0/src/cache.rs:

@@ -1,0 +1,9 @@
+/home/yellowpc/ダウンロード/ghcap-v0.27.4/target/debug/deps/rust_i18n_support-bf306bbc6abab10e.d: /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/lib.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/atomic_str.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/backend.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/cow_str.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/minify_key.rs
+
+/home/yellowpc/ダウンロード/ghcap-v0.27.4/target/debug/deps/librust_i18n_support-bf306bbc6abab10e.rmeta: /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/lib.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/atomic_str.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/backend.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/cow_str.rs /home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/minify_key.rs
+
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/lib.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/atomic_str.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/backend.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/cow_str.rs:
+/home/yellowpc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rust-i18n-support-4.2.4/src/minify_key.rs:
