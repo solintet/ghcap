@@ -15,6 +15,8 @@ use ratatui::{
 };
 use rustyline::{error::ReadlineError, DefaultEditor};
 use std::io::{self, Stdout, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+static INVALIDATED: AtomicBool = AtomicBool::new(true);
 
 /// Ratatui owns terminal rendering; Crossterm remains the cross-platform backend.
 pub struct Tui {
@@ -41,12 +43,17 @@ pub fn draw_menu(
         text(lang, "key.navigate"),
         text(lang, "key.select_back")
     );
-    let footer = info.unwrap_or(&footer_default).to_string();
-    t.terminal.clear()?;
+    let footer = crate::process::safe_text(info.unwrap_or(&footer_default));
+    if INVALIDATED.swap(false, Ordering::SeqCst) {
+        t.terminal.clear()?;
+    }
     t.terminal.draw(|frame| {
         let area = frame.area();
         let outer = Block::default()
-            .title(format!(" ghcap 0.0.29.8 · {title} "))
+            .title(format!(
+                " ghcap 0.0.29.0 · {} ",
+                crate::process::safe_text(title)
+            ))
             .borders(Borders::ALL);
         let inner = outer.inner(area);
         frame.render_widget(outer, area);
@@ -56,7 +63,7 @@ pub fn draw_menu(
             .split(inner);
         let rows = items
             .iter()
-            .map(|item| ListItem::new(item.as_str()))
+            .map(|item| ListItem::new(crate::process::safe_text(item)))
             .collect::<Vec<_>>();
         let list = List::new(rows)
             .highlight_symbol("› ")
@@ -77,11 +84,35 @@ pub fn draw_menu(
 }
 
 pub fn read_key() -> io::Result<KeyEvent> {
+    let initial_size = terminal::size()?;
     loop {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
+        // Some terminal backends deliver SIGWINCH only with a subsequent key.
+        // Size polling keeps redraw independent of keyboard input.
+        if terminal::size()? != initial_size {
+            INVALIDATED.store(true, Ordering::SeqCst);
+            return Ok(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
+        }
+        if crate::process::shutting_down() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Shutdown requested",
+            ));
+        }
+        if !event::poll(std::time::Duration::from_millis(100))? {
+            continue;
+        }
+        match event::read()? {
+            Event::Resize(_, _) => {
+                INVALIDATED.store(true, Ordering::SeqCst);
+                return Ok(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
+            }
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                    return Err(io::Error::new(io::ErrorKind::Interrupted, "Interrupted"));
+                }
                 return Ok(key);
             }
+            _ => {}
         }
     }
 }
@@ -140,10 +171,19 @@ pub fn manage_select(
 }
 
 pub fn select(t: &mut Tui, lang: &str, title: &str, items: &[String]) -> io::Result<Option<usize>> {
+    select_initial(t, lang, title, items, 0)
+}
+pub fn select_initial(
+    t: &mut Tui,
+    lang: &str,
+    title: &str,
+    items: &[String],
+    initial: usize,
+) -> io::Result<Option<usize>> {
     if items.is_empty() {
         return Ok(None);
     }
-    let mut selected = 0usize;
+    let mut selected = initial.min(items.len() - 1);
     loop {
         draw_menu(t, lang, title, items, selected, None)?;
         match read_key()?.code {
@@ -176,34 +216,46 @@ pub fn confirm(t: &mut Tui, lang: &str, title: &str, message: &str) -> io::Resul
 }
 
 pub fn message(lang: &str, title: &str, message: &str) -> io::Result<()> {
+    let message = crate::process::safe_text(message);
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-    terminal.clear()?;
-    terminal.draw(|frame| {
-        let area = frame.area();
-        let block = Block::default()
-            .title(format!(" {title} "))
-            .borders(Borders::ALL);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(inner);
-        frame.render_widget(
-            Paragraph::new(Text::from(message)).wrap(Wrap { trim: false }),
-            chunks[0],
-        );
-        frame.render_widget(
-            Paragraph::new(text(lang, "key.message_close")).alignment(Alignment::Center),
-            chunks[1],
-        );
-    })?;
+    let mut offset = 0u16;
     loop {
-        if matches!(
-            read_key()?.code,
-            KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q')
-        ) {
-            return Ok(());
+        terminal.clear()?;
+        terminal.draw(|frame| {
+            let block = Block::default()
+                .title(format!(" {} ", crate::process::safe_text(title)))
+                .borders(Borders::ALL);
+            let area = frame.area();
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(inner);
+            frame.render_widget(
+                Paragraph::new(Text::from(message.as_str()))
+                    .wrap(Wrap { trim: false })
+                    .scroll((offset, 0)),
+                chunks[0],
+            );
+            frame.render_widget(
+                Paragraph::new(format!(
+                    "{} · ↑/↓ PgUp/PgDn",
+                    text(lang, "key.message_close")
+                )),
+                chunks[1],
+            );
+        })?;
+        match read_key()?.code {
+            KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => {
+                INVALIDATED.store(true, Ordering::SeqCst);
+                return Ok(());
+            }
+            KeyCode::Up => offset = offset.saturating_sub(1),
+            KeyCode::Down => offset = offset.saturating_add(1),
+            KeyCode::PageUp => offset = offset.saturating_sub(10),
+            KeyCode::PageDown => offset = offset.saturating_add(10),
+            _ => {}
         }
     }
 }
@@ -223,7 +275,7 @@ pub fn edit_commit_message(
     let mut current = initial.to_string();
     loop {
         leave_tui()?;
-        println!("\nghcap 0.0.29.8 - Commit Message\n=== コミットメッセージ ===\n");
+        println!("\nghcap 0.0.29.0 - Commit Message\n=== コミットメッセージ ===\n");
         println!("プリセット内容は入力欄に事前入力されています。\\n は改行として扱われます。空欄のままEnterを押すと初期値を維持します。\n:back と入力するとプリセット選択へ戻ります。\n");
         let edited_result = readline_initial("> ", &current);
         let edited = match edited_result {
@@ -328,6 +380,7 @@ pub fn leave_tui() -> io::Result<()> {
 }
 
 pub fn enter_tui() -> io::Result<()> {
+    INVALIDATED.store(true, Ordering::SeqCst);
     execute!(io::stdout(), EnterAlternateScreen, Hide)?;
     terminal::enable_raw_mode()?;
     Ok(())
@@ -344,33 +397,18 @@ pub fn cui_login(lang: &str, command: &mut std::process::Command, url: &str) -> 
     println!("\n{}\n", text(lang, "login.start"));
     io::stdout().flush()?;
 
-    let status = match command.status() {
-        Ok(status) => status,
-        Err(error) => {
-            println!("\n{}: 1", text(lang, "common.exit_code"));
-            println!("{error}");
-            println!("\n{}", text(lang, "login.failed"));
-            println!("\n{}", text(lang, "key.cui_return"));
-            io::stdout().flush()?;
-            let _ = read_key_or_line();
-            enter_tui()?;
-            return Ok(false);
-        }
-    };
-
-    if !status.success() {
-        match status.code() {
-            Some(code) => println!("\n{}: {code}", text(lang, "common.exit_code")),
-            None => println!("\n{}", text(lang, "common.terminated")),
-        }
+    let result = crate::process::interactive(command);
+    if let Err(error) = &result {
+        println!("{}", crate::process::safe_text(error));
         println!("{}", text(lang, "login.failed"));
-        println!("\n{}", text(lang, "key.cui_return"));
+        println!("{}", text(lang, "key.cui_return"));
         io::stdout().flush()?;
-        let _ = read_key_or_line();
+        if !crate::process::shutting_down() {
+            let _ = read_key_or_line();
+        }
     }
-
     enter_tui()?;
-    Ok(status.success())
+    Ok(result.unwrap_or(false))
 }
 
 pub fn cui_operation_result<F>(
@@ -392,9 +430,8 @@ where
             println!("\n{}: 0", text(lang, "common.exit_code"));
         }
         Err(error) => {
-            println!("{error}");
-            let code = extract_exit_code(error).unwrap_or(1);
-            println!("\n{}: {code}", text(lang, "common.exit_code"));
+            println!("{}", crate::process::safe_text(error));
+            println!("\nOperation failed. See the actual exit status above.");
         }
     }
     println!("\n{}", text(lang, "key.cui_return"));
@@ -436,45 +473,23 @@ pub fn cui_operation<F>(lang: &str, title: &str, operation: F) -> io::Result<boo
 where
     F: FnOnce() -> Result<String, String>,
 {
-    leave_tui()?;
-    println!("\n=== {title} ===\n");
-    let success = match operation() {
-        Ok(output) => {
-            if !output.trim().is_empty() {
-                println!("{output}");
-            }
-            println!("\n{}: 0", text(lang, "common.exit_code"));
-            true
-        }
-        Err(error) => {
-            println!("{error}");
-            let code = extract_exit_code(&error).unwrap_or(1);
-            println!("\n{}: {code}", text(lang, "common.exit_code"));
-            false
-        }
-    };
-    println!("\n{}", text(lang, "key.cui_return"));
-    io::stdout().flush()?;
-    let _ = read_key_or_line();
-    enter_tui()?;
-    Ok(success)
-}
-
-fn extract_exit_code(error: &str) -> Option<i32> {
-    let marker = "exit code ";
-    error
-        .split(marker)
-        .nth(1)?
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()
+    Ok(cui_operation_result(lang, title, operation)?.is_ok())
 }
 
 fn read_key_or_line() -> io::Result<()> {
-    let mut line = String::new();
-    let _ = io::stdin().read_line(&mut line)?;
-    Ok(())
+    loop {
+        if crate::process::shutting_down() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Shutdown requested",
+            ));
+        }
+        if crossterm::event::poll(std::time::Duration::from_millis(100))?
+            && matches!(crossterm::event::read()?, crossterm::event::Event::Key(_))
+        {
+            return Ok(());
+        }
+    }
 }
 
 pub fn prompt(_t: &mut Tui, title: &str, default: &str) -> io::Result<Option<String>> {

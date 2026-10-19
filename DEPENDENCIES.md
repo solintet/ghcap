@@ -1,19 +1,11 @@
-# Dependency notes for ghcap 0.0.29.8
+# Dependencies — v0.0.29.0
 
-## Newly added direct dependencies
+Git、認証JSON機能に対応するGitHub CLI、GnuPGが必要です。起動前に終了コードを含むversion検査とghの能力検査を行い、不足時は端末をraw modeへ変更する前に停止します。インストール・OS自体の更新は自動で行いません。
 
-| Crate | Version | License | Purpose |
-|---|---:|---|---|
-| `rust-i18n` | 4.2.2 | MIT | Compile-time translations, locale selection, and fallback |
-| `walkdir` | 2.5.0 | MIT OR Unlicense | Cross-platform recursive traversal of release staging folders |
+macOSではHomebrew等で `git gh gnupg` を導入し、`gh auth login` で認証してください。GitHub CLIの更新時は公式のセキュリティ告知とOS側の更新情報を確認してください。能力検査はすべてのセキュリティ修正の保証ではありません。
 
-Neither newly added direct dependency uses GPL-family or MPL licensing. `walkdir` is dual-licensed; the MIT option can be selected for redistribution.
+Rust依存はCargo.tomlに固定し、Cargo.lockを同梱します。anyhowは1.0.104、Ratatuiは0.30.2、解決済みlruは0.18.5です。旧版の対象依存を更新しました。すべての脆弱性が存在しないことの証明ではありません。Cargo.lockの変更時にはテストとアドバイザリ再検査を行ってください。
 
-## Existing direct dependencies
+外部プロセスはstd::process、プロセスグループ・no-followファイル操作にはUnix上でnix、終了通知にsignal-hookを使用します。UIはRatatui/Crossterm、入力はRustyline、保存はSerdeとtempfileです。設定fsyncを維持し、不要な保存を省略します。
 
-The direct dependencies are pinned in `Cargo.toml`. A full transitive-license conclusion requires generating `Cargo.lock` with Cargo and inspecting the resolved graph; this source package does not claim that a complete transitive audit has been run in the current build environment.
-
-
-## Startup dependency checks (v0.0.29.8)
-
-On normal TUI startup, ghcap checks that `git`, `gh` (GitHub CLI), and `gpg` (GnuPG) can be launched with `--version`. If any are unavailable, startup stops before entering raw terminal mode and prints a localized missing-dependency list with installation guidance for Windows, macOS, and common Linux distributions. Stop-control subcommands (`commitstop`, `pushstop`, and `commitpushstop`) bypass this check so they can still reach a running instance.
+第三者ライセンスの宣言一覧と収集した本文はTHIRD_PARTY_NOTICES.mdおよびTHIRD_PARTY_LICENSES/にあります。対象外OS・ビルド依存も含む保守的な一覧で、未収集項目は一覧末尾に明記しています。正式再配布前に未収集本文の確認が必要です。

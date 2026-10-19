@@ -1,8 +1,5 @@
 use crate::i18n;
-use std::{
-    env, fs,
-    process::{Command, Stdio},
-};
+use std::{env, fs};
 
 const REQUIRED: [(&str, &str); 3] = [("Git", "git"), ("GitHub CLI", "gh"), ("GnuPG", "gpg")];
 
@@ -16,6 +13,15 @@ pub fn check_required(locale: &str) -> Result<(), String> {
         .collect();
 
     if missing.is_empty() {
+        let help = crate::process::capture_timeout(
+            "gh",
+            &["auth", "status", "--help"],
+            None,
+            std::time::Duration::from_secs(5),
+        )?;
+        if !help.success || !help.stdout.contains("--json") {
+            return Err("GitHub CLI lacks 'gh auth status --json'. Install a compatible, security-maintained gh release (2.98.0+ or equivalent vendor fixes). Saved accounts were preserved.".into());
+        }
         return Ok(());
     }
 
@@ -38,14 +44,13 @@ pub fn check_required(locale: &str) -> Result<(), String> {
 }
 
 fn command_available(command: &str) -> bool {
-    Command::new(command)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    crate::process::capture_timeout(
+        command,
+        &["--version"],
+        None,
+        std::time::Duration::from_secs(5),
+    )
+    .is_ok_and(|o| o.success)
 }
 
 fn installation_guidance(locale: &str) -> String {

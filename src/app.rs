@@ -175,7 +175,16 @@ fn delete_account(config: &mut Config, tui: &mut Tui, index: usize) -> io::Resul
     )? {
         return Ok(());
     }
+    let selected_name = config
+        .accounts
+        .get(config.last_account)
+        .map(|a| a.name.clone());
     config.accounts.remove(index);
+    if let Some(name) = selected_name {
+        if let Some(i) = config.accounts.iter().position(|a| a.name == name) {
+            config.last_account = i;
+        }
+    }
     if config.accounts.is_empty() {
         config.last_account = 0;
     } else if config.last_account >= config.accounts.len() {
@@ -278,22 +287,8 @@ fn local_repo(config: &mut Config, tui: &mut Tui) -> io::Result<()> {
 }
 
 fn repo_from_remote(remote: &str) -> Repo {
-    let mut full_name = remote.trim().trim_end_matches('/').to_string();
-    for prefix in [
-        "git@github.com:",
-        "https://github.com/",
-        "http://github.com/",
-        "ssh://git@github.com/",
-    ] {
-        if let Some(rest) = full_name.strip_prefix(prefix) {
-            full_name = rest.to_string();
-            break;
-        }
-    }
-    if full_name.ends_with(".git") {
-        full_name.truncate(full_name.len() - 4);
-    }
-    let name = full_name.rsplit('/').next().unwrap_or("").to_string();
+    let full_name = git::github_identity(remote).unwrap_or_default();
+    let name = full_name.rsplit('/').next().unwrap_or_default().to_owned();
     Repo {
         name,
         full_name,
@@ -361,14 +356,14 @@ fn repo_menu(config: &mut Config, tui: &mut Tui, account: &Account, repo: &Repo)
                 ui::message(&lang, &t(&lang, "repo.info"), &message)?;
             }
             9 => clone_repo(config, tui, repo)?,
-            10 => release_flow(tui, repo)?,
+            10 => release_flow(config, tui, repo)?,
             _ => return Ok(()),
         }
     }
 }
 
-fn release_flow(tui: &mut Tui, repo: &Repo) -> io::Result<()> {
-    let lang = "ja";
+fn release_flow(config: &Config, tui: &mut Tui, repo: &Repo) -> io::Result<()> {
+    let lang = config.language.as_str();
     let Some(repo_path) = repo_local_path(repo) else {
         return ui::message(
             lang,
@@ -383,7 +378,7 @@ fn release_flow(tui: &mut Tui, repo: &Repo) -> io::Result<()> {
     else {
         return Ok(());
     };
-    let directory = PathBuf::from(directory.trim().trim_matches('"'));
+    let directory = PathBuf::from(directory);
     let directory = if directory.is_absolute() {
         directory
     } else {
@@ -403,19 +398,15 @@ fn release_flow(tui: &mut Tui, repo: &Repo) -> io::Result<()> {
     let asset_list = bundle
         .assets
         .iter()
-        .map(|p| format!("- {}", p.strip_prefix(&directory).unwrap_or(p).display()))
+        .map(|p| format!("- {}", p.file_name().unwrap_or_default().to_string_lossy()))
         .collect::<Vec<_>>()
         .join("\n");
     let Some(tag) = ui::cui_prompt("Release tag (e.g. v1.0.0)", "v0.1.0")? else {
         return Ok(());
     };
     let tag = tag.trim().to_string();
-    if tag.is_empty() || tag.chars().any(char::is_whitespace) {
-        return ui::message(
-            lang,
-            "GitHub Release",
-            "Tag must not be empty or contain whitespace.",
-        );
+    if let Err(error) = crate::release::validate_tag(&tag) {
+        return ui::message(lang, "GitHub Release", &error);
     }
     let Some(title) = ui::cui_prompt("Release title", &tag)? else {
         return Ok(());
@@ -437,20 +428,84 @@ fn release_flow(tui: &mut Tui, repo: &Repo) -> io::Result<()> {
         1 => crate::release::ReleaseKind::Prerelease,
         _ => crate::release::ReleaseKind::Draft,
     };
+    if let Err(error) = git::validate_root(Path::new(&repo_path)) {
+        return ui::message(lang, "Release", &error);
+    }
+    let expected_url = format!("https://github.com/{}.git", repo.full_name);
+    if !git::origin(Path::new(&repo_path)).is_some_and(|url| git::same_remote(&url, &expected_url))
+    {
+        return ui::message(
+            lang,
+            "Release",
+            "Configured folder and selected GitHub repository do not match. No upload attempted.",
+        );
+    }
+    for key in ["GH_REPO", "GH_HOST"] {
+        if std::env::var_os(key).is_some() {
+            return ui::message(
+                lang,
+                "Release",
+                &format!("{key} overrides the GitHub target. Review your environment first."),
+            );
+        }
+    }
+    let target = match git::git_in(
+        Some(Path::new(&repo_path)),
+        &["rev-parse", "--verify", "HEAD"],
+    ) {
+        Ok(v) => v,
+        Err(e) => return ui::message(lang, "Release", &e),
+    };
+    // Existing remote tags must refer to the exact reviewed source SHA.
+    let refs = match git::git_in(
+        Some(Path::new(&repo_path)),
+        &[
+            "ls-remote",
+            "--tags",
+            "origin",
+            &format!("refs/tags/{tag}"),
+            &format!("refs/tags/{tag}^{{}}"),
+        ],
+    ) {
+        Ok(v) => v,
+        Err(e) => return ui::message(lang, "Release", &e),
+    };
+    let existing = refs
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .next_back();
+    if existing.is_some_and(|(sha, _)| sha != target) {
+        return ui::message(
+            lang,
+            "Release",
+            "Existing tag points to a different source commit. It will not be overwritten.",
+        );
+    }
+    let notes_preview = fs::read_to_string(&bundle.notes_file)?;
+    ui::message(
+        lang,
+        "Snapshot release notes — review before upload",
+        &notes_preview,
+    )?;
     let summary = format!(
         "Repository: {}\nTag: {}\nTitle: {}\nType: {}\nNotes: {}\nAssets ({}):\n{}\n\nCreate/upload now?",
-        repo.full_name, tag, title, kinds[kind_index], bundle.notes_file.display(), bundle.assets.len(), asset_list
+        repo.full_name, tag, title, kinds[kind_index], format_args!("{} (source {target})",bundle.notes_file.display()), bundle.assets.len(), asset_list
     );
     if !ui::cui_confirm_enter(lang, "GitHub Release: review", &summary)? {
         return Ok(());
     }
 
     // If a release already exists, offer asset upload only. Existing assets are never clobbered.
-    let view_args = ["release", "view", tag.as_str()];
+    let view_args = [
+        "release",
+        "view",
+        tag.as_str(),
+        "--repo",
+        repo.full_name.as_str(),
+    ];
     ui::leave_tui()?;
     println!("\n=== Checking GitHub Release ===\n");
-    let view_result =
-        crate::process::capture_with_wait("gh", &view_args, Some(Path::new(&repo_path)));
+    let view_result = crate::process::capture_with_wait("gh", &view_args, None);
     ui::enter_tui()?;
     let view = view_result.map_err(io::Error::other)?;
     let exists = if view.success {
@@ -471,15 +526,14 @@ fn release_flow(tui: &mut Tui, repo: &Repo) -> io::Result<()> {
             );
         }
     };
-    let result = if exists {
-        if !ui::cui_confirm_enter(lang, "Existing release", &format!("Release {tag} already exists.\n\nPress Enter to upload these assets without overwriting existing assets.\nRelease title, notes, and type will not be changed."))? {
-            return Ok(());
+    if exists && !ui::cui_yes_no(lang, "Existing release", &format!("Release {tag} exists. Upload these snapshot assets without overwriting? Previous partial batches must be reviewed using gh first."))? {return Ok(());}
+    let _ = ui::cui_operation_result(lang, "GitHub Release", || {
+        if exists {
+            crate::release::upload_to_existing(&repo.full_name, &tag, &bundle)
+        } else {
+            crate::release::create_release(&repo.full_name, &tag, &title, &bundle, kind, &target)
         }
-        crate::release::upload_to_existing(&repo_path, &tag, &bundle)
-    } else {
-        crate::release::create_release(&repo_path, &tag, &title, &bundle, kind)
-    };
-    let _ = ui::cui_operation_result(lang, "GitHub Release", || result)?;
+    })?;
     Ok(())
 }
 
@@ -500,10 +554,9 @@ fn ensure_git_setup(
 ) -> io::Result<Option<PathBuf>> {
     let expected = format!("https://github.com/{}.git", repo.full_name);
     let mut path = repo_path(repo)?;
-    if path
-        .as_ref()
-        .is_none_or(|p| !git::is_repo(p) || git::origin(p).as_deref() != Some(expected.as_str()))
-    {
+    if path.as_ref().is_none_or(|p| {
+        !git::is_repo(p) || !git::origin(p).is_some_and(|url| git::same_remote(&url, &expected))
+    }) {
         if !git_setup(config, tui, repo)? {
             return Ok(None);
         }
@@ -563,13 +616,41 @@ fn git_setup(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<bool
             return Ok(false);
         }
     }
+    if git::is_repo(&path) {
+        if let Err(error) = git::validate_root(&path) {
+            ui::message(&lang, "Git folder", &error)?;
+            return Ok(false);
+        }
+    }
     if !git::is_repo(&path)
         && !ui::cui_operation(&lang, &t(&lang, "git.init"), || git::init(&path))?
     {
         return Ok(false);
     }
+    if let Err(error) = git::validate_root(&path) {
+        ui::message(&lang, "Git folder", &error)?;
+        return Ok(false);
+    }
     let remote = format!("https://github.com/{}.git", repo.full_name);
-    let needs_remote = git::origin(&path).as_deref() != Some(remote.as_str());
+    let old_remote = git::origin(&path);
+    let needs_remote = !old_remote
+        .as_ref()
+        .is_some_and(|url| git::same_remote(url, &remote));
+    if needs_remote
+        && old_remote.is_some()
+        && !ui::cui_yes_no(
+            &lang,
+            "Change origin",
+            &format!(
+                "Folder: {}\nOld: {}\nNew: {}\nChange this repository's origin?",
+                path.display(),
+                process::safe_text(old_remote.as_deref().unwrap_or_default()),
+                remote
+            ),
+        )?
+    {
+        return Ok(false);
+    }
     if needs_remote
         && !ui::cui_operation(&lang, &t(&lang, "git.remote"), || {
             git::set_origin(&path, &remote)
@@ -622,7 +703,11 @@ fn clone_repo(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<()>
     Ok(())
 }
 
-fn commit_message_flow(config: &mut Config, tui: &mut Tui) -> io::Result<CommitMessageOutcome> {
+fn commit_message_flow(
+    config: &mut Config,
+    tui: &mut Tui,
+    repo: &Repo,
+) -> io::Result<CommitMessageOutcome> {
     loop {
         let lang = config.language.clone();
         let mut items = config
@@ -631,7 +716,15 @@ fn commit_message_flow(config: &mut Config, tui: &mut Tui) -> io::Result<CommitM
             .map(|p| p.name.clone())
             .collect::<Vec<_>>();
         items.push("新しいプリセットを作成".into());
-        let Some(index) = ui::select(tui, &lang, &t(&lang, "repo.commit"), &items)? else {
+        let preferred = storage::load_repo_config(&repo.full_name)?.preset_id;
+        let initial = config
+            .presets
+            .iter()
+            .position(|p| p.id == preferred)
+            .unwrap_or(0);
+        let Some(index) =
+            ui::select_initial(tui, &lang, &t(&lang, "repo.commit"), &items, initial)?
+        else {
             return Ok(CommitMessageOutcome::Back);
         };
 
@@ -645,7 +738,7 @@ fn commit_message_flow(config: &mut Config, tui: &mut Tui) -> io::Result<CommitM
             }
             let message =
                 ui::prompt(tui, &t(&lang, "presets.message"), "feat: ")?.unwrap_or_default();
-            let id = format!("preset-{}-{}", std::process::id(), config.presets.len() + 1);
+            let id = storage::new_id("preset")?;
             config.presets.push(crate::models::Preset {
                 id,
                 name,
@@ -676,13 +769,16 @@ fn commit_repo(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<()
     let Some(path) = ensure_git_setup(config, tui, repo)? else {
         return Ok(());
     };
-    let message = match commit_message_flow(config, tui)? {
+    let message = match commit_message_flow(config, tui, repo)? {
         CommitMessageOutcome::Commit(message) => message,
         CommitMessageOutcome::Back => return Ok(()),
     };
+    let Some(expected) = review_commit(tui, &lang, &path)? else {
+        return Ok(());
+    };
     actions::reset();
     let result = ui::cui_operation_result(&lang, &t(&lang, "repo.commit"), || {
-        actions::commit(&message, &path)
+        actions::commit(&message, &path, expected)
     })?;
     if let Err(error) = result {
         if is_gpg_error(&error)
@@ -695,7 +791,7 @@ fn commit_repo(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<()
         {
             actions::reset();
             let _ = ui::cui_operation_result(&lang, &t(&lang, "repo.commit"), || {
-                actions::commit(&message, &path)
+                actions::commit(&message, &path, expected)
             })?;
         }
     }
@@ -707,8 +803,27 @@ fn push_repo(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<()> 
     let Some(path) = ensure_git_setup(config, tui, repo)? else {
         return Ok(());
     };
+    let plan = match git::push_plan(&path) {
+        Ok(v) => v,
+        Err(e) => return ui::message(&lang, "Push blocked", &e),
+    };
+    if !ui::cui_yes_no(
+        &lang,
+        "Review Push",
+        &format!(
+            "{}\n{} -> {}\nCommit: {}\nSend without force?",
+            process::safe_text(&plan.url),
+            plan.branch,
+            plan.target,
+            plan.head
+        ),
+    )? {
+        return Ok(());
+    }
     actions::reset();
-    let result = ui::cui_operation_result(&lang, &t(&lang, "repo.push"), || actions::push(&path))?;
+    let result = ui::cui_operation_result(&lang, &t(&lang, "repo.push"), || {
+        actions::push(&path, &plan)
+    })?;
     match result {
         Err(error)
             if is_gpg_error(&error)
@@ -720,8 +835,9 @@ fn push_repo(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<()> 
                 )? =>
         {
             actions::reset();
-            let retry =
-                ui::cui_operation_result(&lang, &t(&lang, "repo.push"), || actions::push(&path))?;
+            let retry = ui::cui_operation_result(&lang, &t(&lang, "repo.push"), || {
+                actions::push(&path, &plan)
+            })?;
             let _ = retry;
         }
         _ => {}
@@ -729,76 +845,85 @@ fn push_repo(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<()> 
     Ok(())
 }
 
+fn review_commit(tui: &mut Tui, lang: &str, path: &Path) -> io::Result<Option<u64>> {
+    let fingerprint = match git::commit_fingerprint(path) {
+        Ok(v) => v,
+        Err(e) => {
+            ui::message(lang, "Commit blocked", &e)?;
+            return Ok(None);
+        }
+    };
+    let status = git::git_in(Some(path), &["status", "--short", "--untracked-files=all"])
+        .map_err(io::Error::other)?;
+    ui::message(
+        lang,
+        "All-files commit — review untracked additions and deletions",
+        &process::safe_text(&status),
+    )?;
+    if ui::cui_yes_no(lang,"Confirm all-files staging","Commit stages ALL non-ignored changes shown, including untracked files and deletions. Continue?")? {Ok(Some(fingerprint))} else {let _=tui;Ok(None)}
+}
 fn commit_push(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<()> {
     let lang = config.language.clone();
     let Some(path) = ensure_git_setup(config, tui, repo)? else {
         return Ok(());
     };
-    let message = match commit_message_flow(config, tui)? {
-        CommitMessageOutcome::Commit(message) => message,
+    let message = match commit_message_flow(config, tui, repo)? {
+        CommitMessageOutcome::Commit(v) => v,
         CommitMessageOutcome::Back => return Ok(()),
     };
     let rc = storage::load_repo_config(&repo.full_name)?;
-    let result =
-        if rc.pre_push_enabled && !rc.pre_push_command.trim().is_empty() && rc.shell_confirmation {
+    let mut policy = actions::ShellPolicy::Skip;
+    if rc.pre_push_enabled && !rc.pre_push_command.trim().is_empty() {
+        if rc.shell_confirmation {
             let choices = vec![
                 t(&lang, "shell.commit_then_run"),
                 t(&lang, "shell.run_then_commit"),
                 t(&lang, "shell.skip"),
                 t(&lang, "common.cancel"),
             ];
-            let Some(choice) = ui::select(tui, &lang, &t(&lang, "shell.detected"), &choices)?
-            else {
-                return Ok(());
-            };
-            match choice {
-                0 => ui::cui_operation_result(&lang, &t(&lang, "repo.commit_push"), || {
-                    let c = actions::commit(&message, &path)?;
-                    if c == "Commit cancelled." {
-                        return Ok(c);
-                    }
-                    if c == "No changes to commit." {
-                        println!("No changes to commit. Commitをスキップします。");
-                    }
-                    process::run_shell(&rc.pre_push_command, &path)?;
-                    actions::push(&path)
-                })?,
-                1 => ui::cui_operation_result(&lang, &t(&lang, "repo.commit_push"), || {
-                    process::run_shell(&rc.pre_push_command, &path)?;
-                    let c = actions::commit(&message, &path)?;
-                    if c == "Commit cancelled." {
-                        return Ok(c);
-                    }
-                    if c == "No changes to commit." {
-                        println!("No changes to commit. Commitをスキップします。");
-                    }
-                    actions::push(&path)
-                })?,
-                2 => ui::cui_operation_result(&lang, &t(&lang, "repo.commit_push"), || {
-                    actions::commit_push(repo, config, &message, &path)
-                })?,
+            policy = match ui::select(tui, &lang, &t(&lang, "shell.detected"), &choices)? {
+                Some(0) => actions::ShellPolicy::AfterCommit,
+                Some(1) => actions::ShellPolicy::BeforeCommit,
+                Some(2) => actions::ShellPolicy::Skip,
                 _ => return Ok(()),
-            }
+            };
         } else {
-            ui::cui_operation_result(&lang, &t(&lang, "repo.commit_push"), || {
-                actions::commit_push(repo, config, &message, &path)
-            })?
-        };
-    if let Err(error) = result {
-        if is_gpg_error(&error)
-            && gpg_recovery(tui, &path, &lang)?
-            && ui::cui_yes_no(
-                &lang,
-                &t(&lang, "gpg.retry_title"),
-                &t(&lang, "gpg.retry_push"),
-            )?
-        {
-            actions::reset();
-            let _ = ui::cui_operation_result(&lang, &t(&lang, "repo.commit_push"), || {
-                actions::commit_push(repo, config, &message, &path)
-            })?;
+            policy = actions::ShellPolicy::AfterCommit;
         }
     }
+    actions::reset();
+    if policy == actions::ShellPolicy::BeforeCommit {
+        if ui::cui_operation_result(&lang, "Pre-commit shell", || {
+            actions::shell(&rc.pre_push_command, &path)
+        })?
+        .is_err()
+        {
+            return Ok(());
+        }
+        policy = actions::ShellPolicy::Skip;
+    }
+    let plan = match git::push_plan(&path) {
+        Ok(v) => v,
+        Err(e) => return ui::message(&lang, "Commit & Push blocked", &e),
+    };
+    if !ui::cui_yes_no(
+        &lang,
+        "Review Push target",
+        &format!(
+            "{}\n{} -> {}\nA successful commit will be sent here without force. Continue?",
+            process::safe_text(&plan.url),
+            plan.branch,
+            plan.target
+        ),
+    )? {
+        return Ok(());
+    }
+    let Some(expected) = review_commit(tui, &lang, &path)? else {
+        return Ok(());
+    };
+    let _ = ui::cui_operation_result(&lang, &t(&lang, "repo.commit_push"), || {
+        actions::commit_push(repo, config, &message, &path, expected, policy, &plan)
+    })?;
     Ok(())
 }
 
@@ -846,8 +971,8 @@ fn gpg_recovery(tui: &mut Tui, path: &Path, lang: &str) -> io::Result<bool> {
     };
     let key = &keys[i].0;
     if !ui::cui_operation(lang, &t(lang, "gpg.register"), || {
-        git::set_signing_key(path, key)?;
-        gpg::register_key(key).map(|_| t(lang, "gpg.registered"))
+        gpg::register_key(key)?;
+        git::set_signing_key(path, key).map(|_| t(lang, "gpg.registered"))
     })? {
         return Ok(false);
     }
@@ -912,9 +1037,16 @@ fn presets(config: &mut Config, tui: &mut Tui) -> io::Result<()> {
 }
 fn add_preset(config: &mut Config, tui: &mut Tui) -> io::Result<()> {
     let lang = config.language.clone();
-    let name = ui::prompt(tui, &t(&lang, "presets.name"), "New preset")?.unwrap_or_default();
-    let message = ui::prompt(tui, &t(&lang, "presets.message"), "Update: ")?.unwrap_or_default();
-    let id = format!("preset-{}-{}", std::process::id(), config.presets.len() + 1);
+    let Some(name) = ui::prompt(tui, &t(&lang, "presets.name"), "New preset")? else {
+        return Ok(());
+    };
+    let Some(message) = ui::prompt(tui, &t(&lang, "presets.message"), "Update: ")? else {
+        return Ok(());
+    };
+    if name.trim().is_empty() {
+        return Ok(());
+    }
+    let id = storage::new_id("preset")?;
     config
         .presets
         .push(crate::models::Preset { id, name, message });
@@ -922,14 +1054,18 @@ fn add_preset(config: &mut Config, tui: &mut Tui) -> io::Result<()> {
 }
 fn edit_preset(config: &mut Config, tui: &mut Tui, index: usize) -> io::Result<()> {
     let lang = config.language.clone();
-    let name = ui::prompt(tui, &t(&lang, "presets.name"), &config.presets[index].name)?
-        .unwrap_or_default();
-    let message = ui::prompt(
+    let Some(name) = ui::prompt(tui, &t(&lang, "presets.name"), &config.presets[index].name)?
+    else {
+        return Ok(());
+    };
+    let Some(message) = ui::prompt(
         tui,
         &t(&lang, "presets.message"),
         &config.presets[index].message,
     )?
-    .unwrap_or_default();
+    else {
+        return Ok(());
+    };
     config.presets[index].name = name;
     config.presets[index].message = message;
     storage::save_config(config)
@@ -943,6 +1079,17 @@ fn delete_preset(config: &mut Config, tui: &mut Tui, index: usize) -> io::Result
             &t(&lang, "presets.last_forbidden"),
         )?;
         return Ok(());
+    }
+    let used = storage::preset_references(&config.presets[index].id)?;
+    if !used.is_empty() {
+        return ui::message(
+            &lang,
+            "Preset in use",
+            &format!(
+                "Choose another preset in these repository settings first:\n{}",
+                used.join("\n")
+            ),
+        );
     }
     if ui::confirm(
         tui,
@@ -1001,12 +1148,13 @@ fn repo_settings(config: &mut Config, tui: &mut Tui, repo: &Repo) -> io::Result<
         match i {
             0 => settings.pre_push_enabled = !settings.pre_push_enabled,
             1 => {
-                settings.pre_push_command = ui::prompt(
+                if let Some(command) = ui::prompt(
                     tui,
                     &t(&lang, "settings.shell_command"),
                     &settings.pre_push_command,
-                )?
-                .unwrap_or_default()
+                )? {
+                    settings.pre_push_command = command;
+                }
             }
             2 => settings.shell_confirmation = !settings.shell_confirmation,
             3 => {
@@ -1063,7 +1211,7 @@ fn settings(config: &mut Config, tui: &mut Tui) -> io::Result<()> {
             1 => ui::message(
                 &lang,
                 &t(&lang, "settings.config_path"),
-                &storage::cfg_path().display().to_string(),
+                &storage::cfg_path()?.display().to_string(),
             )?,
             _ => return Ok(()),
         }
@@ -1092,9 +1240,24 @@ fn gpg_menu(tui: &mut Tui, config: &Config) -> io::Result<()> {
             })?;
         }
         2 => {
-            ui::cui_operation(&lang, &t(&lang, "gpg.register"), || {
-                gpg::register().map(|_| t(&lang, "gpg.registered"))
-            })?;
+            let keys = match gpg::secret_keys() {
+                Ok(v) => v,
+                Err(e) => return ui::message(&lang, "GPG", &e),
+            };
+            let items = keys
+                .iter()
+                .map(|(id, uid)| format!("{id} {uid}"))
+                .collect::<Vec<_>>();
+            if items.is_empty() {
+                return ui::message(&lang, "GPG", "No usable signing key found.");
+            }
+            if let Some(index) = ui::select(tui, &lang, "Select public key to register", &items)? {
+                if ui::cui_yes_no(&lang, "Register public key", &items[index])? {
+                    ui::cui_operation(&lang, &t(&lang, "gpg.register"), || {
+                        gpg::register_key(&keys[index].0).map(|_| t(&lang, "gpg.registered"))
+                    })?;
+                }
+            }
         }
         _ => {}
     }

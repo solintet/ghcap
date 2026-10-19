@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub struct Account {
     pub name: String,
-    #[serde(default)]
-    pub token: String,
+    #[serde(default, skip_serializing, rename = "token")]
+    pub _legacy_token: String,
     #[serde(default)]
     pub label: String,
 }
@@ -36,6 +36,7 @@ pub struct Repo {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct RepoConfig {
     pub preset_id: String,
     pub pre_push_enabled: bool,
@@ -58,7 +59,9 @@ impl Default for RepoConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
+    pub schema_version: u32,
     pub language: String,
     pub accounts: Vec<Account>,
     pub presets: Vec<Preset>,
@@ -69,6 +72,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            schema_version: 1,
             language: crate::i18n::detect_language(),
             accounts: Vec::new(),
             presets: vec![

@@ -2,7 +2,7 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
-RELEASE_VERSION="0.0.29.8"
+RELEASE_VERSION="0.0.29.0"
 DIST="$ROOT/dist"
 REPO=${GITHUB_REPOSITORY:-}
 WINGET_ID=${WINGET_PACKAGE_ID:-ghcap.ghcap}

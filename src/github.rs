@@ -17,6 +17,9 @@ fn gh(args: &[&str]) -> Result<String, String> {
 pub fn accounts() -> Result<Vec<Account>, String> {
     let output = process::capture("gh", &["auth", "status", "--json", "hosts"], None)?;
     let mut accounts = Vec::new();
+    if !output.success {
+        return Err(process::failure("gh auth status", &output));
+    }
     if let Ok(value) = serde_json::from_str::<Value>(&output.stdout) {
         if let Some(hosts) = value.get("hosts").and_then(Value::as_object) {
             if let Some(users) = hosts.get("github.com").and_then(Value::as_array) {
@@ -24,6 +27,13 @@ pub fn accounts() -> Result<Vec<Account>, String> {
                     let Some(login) = user.get("login").and_then(Value::as_str) else {
                         continue;
                     };
+                    if user
+                        .get("state")
+                        .and_then(Value::as_str)
+                        .is_some_and(|v| v != "success")
+                    {
+                        continue;
+                    }
                     if login.is_empty()
                         || accounts
                             .iter()
@@ -33,7 +43,7 @@ pub fn accounts() -> Result<Vec<Account>, String> {
                     }
                     accounts.push(Account {
                         name: login.to_owned(),
-                        token: String::new(),
+                        _legacy_token: String::new(),
                         label: String::new(),
                     });
                 }
@@ -42,14 +52,7 @@ pub fn accounts() -> Result<Vec<Account>, String> {
     }
 
     if accounts.is_empty() {
-        let login = gh(&["api", "user", "--jq", ".login"])?;
-        if !login.is_empty() {
-            accounts.push(Account {
-                name: login,
-                token: String::new(),
-                label: String::new(),
-            });
-        }
+        return Err("No usable authenticated GitHub accounts were returned. Saved accounts are unchanged; verify gh authentication and JSON support.".into());
     }
     Ok(accounts)
 }
@@ -92,7 +95,7 @@ pub fn clone(repo: &Repo, destination: &str) -> Result<String, String> {
     if destination.trim().is_empty() {
         gh(&["repo", "clone", &repo.full_name])
     } else {
-        gh(&["repo", "clone", &repo.full_name, destination])
+        gh(&["repo", "clone", &repo.full_name, "--", destination])
     }
 }
 

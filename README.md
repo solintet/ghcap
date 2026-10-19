@@ -1,70 +1,51 @@
-# ghcap 0.0.29.8
+# ghcap v0.0.29.0 — safety candidate
 
-ghcap is a cross-platform terminal workflow manager for GitHub repositories. It delegates GitHub operations to the official `gh` CLI, Git operations to `git`, and signing-key operations to `gpg`; ghcap does not implement GitHub authentication or Git internals itself.
+GitHub用のRust製TUIです。Git操作は `git`、GitHub操作は `gh`、署名鍵操作は `gpg` を利用します。この版は安全性改善の候補版です。両macOS実機での操作・配布確認を終えるまでは、正式なStableとは扱いません。
 
-## Architecture
+## 実行環境
 
-- **Ratatui + Crossterm:** terminal layout, widgets, redraws and cross-platform terminal events.
-- **Rustyline:** line editing, including prefilled commit-message presets and ordinary prompts. Commit message line breaks are entered as literal `\n`.
-- **clap:** CLI parsing, generated help and version output.
-- **duct:** shared captured subprocess execution for `git`, `gh` and `gpg`; the live-output Git path remains streamed so progress output and GPG/network diagnostics stay visible.
-- **etcetera:** OS-appropriate config/data directory resolution without the `option-ext` MPL-2.0 dependency.
-- **Serde / serde_json:** typed config serialization and machine-readable `gh` JSON responses. Invalid config JSON is reported instead of silently replaced by defaults.
-- **rust-i18n:** compile-time localization with the existing per-language JSON files retained for Crowdin; runtime language selection and English fallback use the library.
-- **walkdir:** cross-platform recursive Release staging-folder traversal, without following symbolic links.
-- **anyhow:** top-level error context.
+- Git、GitHub CLI、GnuPGをPATHへ導入してください。
+- `gh auth status --json hosts` に対応し、セキュリティ更新が適用されたGitHub CLIが必要です。古いDebian標準パッケージでは、このJSON機能が不足する場合があります。
+- GitHubアカウントの認証は `gh auth login` で管理します。ghcapにトークンを直接設定しません。
+- Rustからビルドする場合はRust 1.89以上とCargo.lockが必要です。最低Rust版そのもののコンパイルは別途検証が必要です。
 
-The app-specific code remains responsible for workflows that are unique to ghcap: account/preset management, repository association, menu navigation, and Commit/Push sequencing.
+## 既存機能
 
-## Features
+アカウントとリポジトリの管理、Clone、Git関連付け、Commit、Push、Commit & Push、Commitプリセット、任意の事前/事後シェル、GPG鍵管理、フォルダからのGitHub Release作成・資産追加を提供します。
 
-- Multiple GitHub accounts, account labels, selection, add/edit/delete/reorder.
-- Repository listing and cloning through `gh`, using JSON output rather than parsing human-readable tables.
-- GitHub account discovery uses `gh auth status --json hosts` rather than parsing human-readable status lines.
-- Local Git repository detection, initialization, origin and identity setup.
-- Commit presets and repository-specific pre-push hooks.
-- Commit, Push, and Commit & Push through `git`.
-- GitHub Release creation from a staging folder: reads `release-notes.md`, recursively uploads all other regular files, and supports Release / Pre-release / Draft. Existing release uploads never use `--clobber`.
-- One-second `Running... Please wait.` heartbeat during silent live Git commands.
-- GPG key listing/generation/registration and recovery after signing failures.
-- Japanese, English, Korean, and Simplified Chinese translations.
-- Stop commands: `ghcap commitstop`, `ghcap pushstop`, `ghcap commitpushstop`.
-- Atomic config writes and preservation of malformed config files for manual recovery.
+Commitは確認した対象を `git add -A` で全件stageします。未追跡・削除も含み、既存のstage範囲を広げます。一覧を必ず確認してください。競合、merge/rebase等の進行中操作、別のGit root、確認後の変更を検出した場合は停止します。stage後の停止・Commit失敗ではindexを自動的に戻しません。Gitで確認してください。
 
-## Build
+Pushは確認したSHAをoriginの単一upstreamブランチへ、forceなしで送信します。upstreamがない場合はGitで明示設定してください。mirror、matching、force/delete/wildcard refspec、複数送信先、異なるpushurlは通常経路で拒否します。通信の中断はリモートへの未反映を保証しません。再試行前にリモートを確認してください。
 
-Requires Rust 1.85 or newer, plus `git`, GitHub CLI (`gh`), and optionally `gpg` for signing-key operations.
+任意シェルとGit hookはユーザー権限のコードです。信頼できるリポジトリ・コマンドのみ使用してください。Skipはシェルを実行しません。ghcapはGitや外部コマンドを隔離するサンドボックスではありません。
+
+## Releaseフォルダ
+
+`release-notes.md`、`RELEASE_NOTES.md`、`Release-Notes.md` のうち1個と、配布する通常ファイルを配置します。ファイル名の重複（ASCIIの大文字小文字を区別しない）、制御文字、`#`、外部ノートへのシンボリックリンクを拒否します。通常の資産シンボリックリンクは除外します。
+
+Unixではno-followで開いた内容を非公開の一時フォルダへコピーし、確認後はそのスナップショットを使用します。ノート1 MiB、資産1個512 MiB、合計1 GiB、資産10,000個までです。これらを超えた場合は明示エラーになります。Windowsのフォルダ公開は安全なno-follow実装が検証されるまで停止します。これは既存機能の制限です。
+
+Release先は選択した `owner/repo` を明示指定します。新規タグの対象は確認したローカルHEADのSHAです。既存タグとの不一致を拒否します。手動で用意したバイナリとソースの一致をghcapが自動認定するわけではありません。既存資産は上書きせず、途中失敗時は作成済みReleaseと資産を手動確認してください。
+
+## 設定と停止
+
+設定はOSのユーザー設定領域に保存します。解決不能時の作業ディレクトリへのfallbackはありません。不正JSON、未知schema、外部からの同時変更を検出した場合は保存を止めます。原子的置換・ファイルと親ディレクトリのfsyncを維持し、同一内容の保存は省略します。Unixの新規ファイルは0600、設定ディレクトリは0700です。旧tokenを含む設定の移行では非公開の原本バックアップを作成します。バックアップにも機密値があるためユーザーが管理してください。
+
+`ghcap commitstop`、`ghcap pushstop`、`ghcap commitpushstop` は起動中インスタンスへ停止を要求します。「要求受付」は「処理が巻き戻った」という意味ではありません。Unixでは処理専用のプロセスグループを停止し、実際の終了結果を表示します。通常捕捉コマンドは60秒、ライブ処理は15分で期限切れになります。大量出力も上限を超えると失敗として扱います。
+
+## ビルドと検査
 
 ```sh
-cargo generate-lockfile
-cargo check --all-targets --locked
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
 cargo test --all-targets --locked
 cargo build --release --locked
 ```
 
-On Debian/Ubuntu, `./packaging/build-linux.sh` generates Linux packages. `./packaging/build-all.sh` extends this to a Windows x64 `.exe`, winget manifests, and a complete SHA-256 inventory. macOS source and CI are integrated in this repository, but macOS builds run only when manually requested through GitHub Actions. Intel and Apple Silicon artifacts are separate; no Universal Binary is generated. Install the build prerequisites listed in `packaging/README.md`. The Arch package is built inside an Arch Linux container, so Debian remains the host OS; Docker or Podman and network access are required for that step. The script runs the Rust release checks before creating any packages. A missing `Cargo.lock` is generated before validation; network access may be needed for the first dependency resolution.
+GitHub ActionsはmacOS Intel・Apple Siliconのネイティブビルド、テスト、パッケージ、SHA-256生成のみです。`.github/workflows/build-macos.yml` はmasterへのPush、PR、手動操作で実行します。各Macで `./packaging/build-macos.sh intel` または `./packaging/build-macos.sh apple-silicon` を実行します。生成済み同名アーカイブの上書きは拒否します。アーカイブにはソースCommit、ツールチェーン情報、Cargo.lockのSHA-256と第三者ライセンス資料を含めます。署名・公証はしていません。最低macOS版とGatekeeper/quarantineの実機検査は別途必要です。
 
-## Cross-platform scope
+既存のWindows/Linux補助スクリプトは旧経路として残しています。この版の検証・配布経路では実行せず、それらのCIやパッケージは追加しません。
 
-The macOS CI workflow at `.github/workflows/macos-ci.yml` runs on pushes, pull requests, and manual dispatch. It builds, tests, and packages separate Intel and Apple Silicon binaries on native macOS runners, then uploads the archives and SHA-256 checksums as workflow artifacts. Linux and Windows workflows are not included in this macOS-only CI configuration. Real GitHub workflows also require compatible versions of `git` and `gh` on the host. CI builds do not replace end-to-end testing against real accounts and repositories.
+公開版表示は `0.0.29.0`、Cargoの3要素SemVerは `0.29.0` です。過去の `0.0.29.8` とは別のユーザー指定番号であり、過去のタグ・成果物を置き換えません。
 
-## License
-
-BSD-2-Clause. Third-party crates retain their own licenses. The newly added direct dependencies `rust-i18n` (MIT) and `walkdir` (MIT or Unlicense) do not use GPL/MPL licensing. The complete transitive dependency graph still needs a Cargo-based license audit before redistribution.
-
-
-See [RELEASE_WORKFLOW_PLAN.md](RELEASE_WORKFLOW_PLAN.md) for the planned build/export-to-GitHub-Release workflow.
-
-> Version note: the public release tag and displayed application version are `v0.0.29.8`. Cargo package metadata uses `0.29.8` because Cargo requires a three-component SemVer package version; the CLI explicitly displays the requested four-component release version.
-
-## Required external tools
-
-The normal ghcap TUI requires **Git** (`git`), **GitHub CLI** (`gh`), and **GnuPG** (`gpg`). At startup, ghcap checks that each command can run with `--version`. If a tool is missing or cannot start, ghcap exits before switching the terminal to raw mode and prints the missing command(s) plus localized installation guidance for the detected operating system or Linux distribution.
-
-- Windows: install Git, GitHub CLI, and Gpg4win.
-- macOS: download the matching Intel or Apple Silicon artifact from the manually triggered GitHub Actions workflow; runtime dependencies are Git, GitHub CLI, and GnuPG.
-- Debian/Ubuntu: `sudo apt update && sudo apt install git gh gnupg`
-- Fedora/RHEL family: `sudo dnf install git gh gnupg2`
-- Arch/Manjaro: `sudo pacman -S git github-cli gnupg`
-
-The `commitstop`, `pushstop`, and `commitpushstop` control commands do not require these tools to be available, so they can still signal an already-running ghcap instance.
+BSD-2-Clause。依存ライセンスは `THIRD_PARTY_NOTICES.md` と `THIRD_PARTY_LICENSES/` を参照してください。未収集の本文があるため、正式再配布前の確認事項が残っています。

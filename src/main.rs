@@ -24,7 +24,7 @@ use std::io;
 #[derive(Parser)]
 #[command(
     name = "ghcap",
-    version = "0.0.29.8",
+    version = "0.0.29.0",
     about = "Cross-platform GitHub commit/push workflow TUI"
 )]
 struct Cli {
@@ -44,7 +44,7 @@ enum CliCommand {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("ghcap: {error:#}");
+        eprintln!("ghcap: {}", process::safe_text(&format!("{error:#}")));
         std::process::exit(1);
     }
 }
@@ -60,12 +60,13 @@ fn run() -> anyhow::Result<()> {
         std::process::exit(storage::send_stop(name));
     }
 
+    process::init_signals()?;
     let config = storage::load_config()?;
     if let Err(message) = dependencies::check_required(&config.language) {
         anyhow::bail!("{message}");
     }
-    storage::save_config(&config)?;
     storage::init_instance()?;
+    let _guard = SessionGuard;
 
     let setup = enable_raw_mode().and_then(|_| execute!(io::stdout(), EnterAlternateScreen, Hide));
     if let Err(error) = setup {
@@ -84,4 +85,13 @@ fn run() -> anyhow::Result<()> {
     let _ = execute!(io::stdout(), LeaveAlternateScreen, crossterm::cursor::Show);
     storage::clear_instance();
     result
+}
+
+struct SessionGuard;
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, crossterm::cursor::Show);
+        storage::clear_instance();
+    }
 }
