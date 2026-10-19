@@ -177,6 +177,11 @@ impl Foreground {
         } else {
             None
         };
+        if previous.is_some() {
+            // A newly spawned reader can receive SIGTTIN before foreground
+            // ownership is transferred. Resume only our dedicated group.
+            let _ = nix::sys::signal::killpg(Pid::from_raw(pid as i32), Signal::SIGCONT);
+        }
         Self { previous, mask }
     }
 }
@@ -582,5 +587,18 @@ mod tests {
         let o = capture("sh", &["-c", "yes x"], None).unwrap();
         assert_eq!(o.termination, Termination::OutputLimit);
         assert!(!o.success);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn interactive_terminal_reads_and_restores_group() {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            return;
+        }
+        let previous = nix::unistd::tcgetpgrp(std::io::stdin()).unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "read value; test \"$value\" = tty-ok"]);
+        assert!(interactive(&mut command).unwrap());
+        assert_eq!(nix::unistd::tcgetpgrp(std::io::stdin()).unwrap(), previous);
     }
 }

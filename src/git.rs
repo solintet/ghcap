@@ -436,7 +436,12 @@ pub(crate) mod tests {
         let p = d.path().join("repo ");
         fs::create_dir(&p).unwrap();
         git_in(Some(&p), &["init"]).unwrap();
-        assert_eq!(root(&p).unwrap(), p);
+        let found = root(&p).unwrap();
+        assert_eq!(found.file_name().unwrap(), "repo ");
+        assert_eq!(
+            fs::canonicalize(found).unwrap(),
+            fs::canonicalize(&p).unwrap()
+        );
     }
     #[test]
     fn unknown_status_is_not_clean() {
