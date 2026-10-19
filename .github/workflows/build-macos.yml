@@ -1,6 +1,10 @@
 name: Build macOS
 
 on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
     inputs:
       architecture:
@@ -19,7 +23,7 @@ permissions:
 jobs:
   build-intel:
     name: Build macOS Intel (x86_64)
-    if: inputs.architecture == 'intel' || inputs.architecture == 'both'
+    if: github.event_name != 'workflow_dispatch' || inputs.architecture == 'intel' || inputs.architecture == 'both'
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -30,17 +34,17 @@ jobs:
         run: ./packaging/build-macos.sh intel
       - uses: actions/upload-artifact@v4
         with:
-          name: ghcap-v0.0.29.7-macos-intel
+          name: ghcap-macos-intel
           path: |
-            dist/ghcap-v0.0.29.7-macos-intel.tar.gz
-            dist/ghcap-v0.0.29.7-macos-intel.tar.gz.sha256
+            dist/ghcap-v*-macos-intel.tar.gz
+            dist/ghcap-v*-macos-intel.tar.gz.sha256
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
 
   build-apple-silicon:
     name: Build macOS Apple Silicon (arm64)
-    if: inputs.architecture == 'apple-silicon' || inputs.architecture == 'both'
+    if: github.event_name != 'workflow_dispatch' || inputs.architecture == 'apple-silicon' || inputs.architecture == 'both'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -51,10 +55,10 @@ jobs:
         run: ./packaging/build-macos.sh apple-silicon
       - uses: actions/upload-artifact@v4
         with:
-          name: ghcap-v0.0.29.7-macos-apple-silicon
+          name: ghcap-macos-apple-silicon
           path: |
-            dist/ghcap-v0.0.29.7-macos-apple-silicon.tar.gz
-            dist/ghcap-v0.0.29.7-macos-apple-silicon.tar.gz.sha256
+            dist/ghcap-v*-macos-apple-silicon.tar.gz
+            dist/ghcap-v*-macos-apple-silicon.tar.gz.sha256
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
