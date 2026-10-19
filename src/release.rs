@@ -19,11 +19,29 @@ pub fn collect_bundle(directory: &Path) -> Result<ReleaseBundle, String> {
     if !directory.is_dir() {
         return Err(format!("Not a directory: {}", directory.display()));
     }
-    let note_candidates = ["release-notes.md", "RELEASE_NOTES.md", "Release-Notes.md"]
-        .iter()
-        .map(|name| directory.join(name))
-        .filter(|path| path.is_file())
-        .collect::<Vec<_>>();
+    // Inspect actual directory entries: on case-insensitive filesystems, probing
+    // several spelling variants can count the same file more than once.
+    let mut note_candidates = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|error| {
+        format!(
+            "Cannot inspect release directory {}: {error}",
+            directory.display()
+        )
+    })? {
+        let entry = entry.map_err(|error| {
+            format!(
+                "Cannot inspect release directory {}: {error}",
+                directory.display()
+            )
+        })?;
+        if matches!(
+            entry.file_name().to_str(),
+            Some("release-notes.md" | "RELEASE_NOTES.md" | "Release-Notes.md")
+        ) && entry.path().is_file()
+        {
+            note_candidates.push(entry.path());
+        }
+    }
     if note_candidates.len() > 1 {
         return Err("Multiple release note files found. Keep only one of release-notes.md, RELEASE_NOTES.md, or Release-Notes.md.".into());
     }
@@ -180,6 +198,31 @@ mod tests {
             .assets
             .iter()
             .any(|p| p.file_name().unwrap() == "app.deb"));
+    }
+
+    #[test]
+    fn bundle_accepts_each_supported_notes_filename() {
+        for name in ["release-notes.md", "RELEASE_NOTES.md", "Release-Notes.md"] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join(name), "Release notes\n").unwrap();
+            fs::write(dir.path().join("app.zip"), b"zip").unwrap();
+            let bundle = collect_bundle(dir.path()).unwrap();
+            assert_eq!(bundle.notes_file.file_name().unwrap(), name);
+            assert_eq!(bundle.assets, vec![dir.path().join("app.zip")]);
+        }
+    }
+
+    #[test]
+    fn bundle_rejects_multiple_actual_notes_files() {
+        let dir = tempfile::tempdir().unwrap();
+        // The underscore keeps these distinct even on case-insensitive volumes.
+        for name in ["release-notes.md", "RELEASE_NOTES.md"] {
+            fs::write(dir.path().join(name), "Release notes\n").unwrap();
+        }
+        fs::write(dir.path().join("app.zip"), b"zip").unwrap();
+        assert!(collect_bundle(dir.path())
+            .unwrap_err()
+            .contains("Multiple release note files"));
     }
 
     #[test]

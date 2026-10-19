@@ -26,13 +26,13 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.architecture == 'intel' || inputs.architecture == 'both'
     runs-on: macos-15-intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - name: Build and package Intel binary
         run: ./packaging/build-macos.sh intel
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: ghcap-macos-intel
           path: |
@@ -47,13 +47,13 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.architecture == 'apple-silicon' || inputs.architecture == 'both'
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - name: Build and package Apple Silicon binary
         run: ./packaging/build-macos.sh apple-silicon
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: ghcap-macos-apple-silicon
           path: |
