@@ -42,7 +42,7 @@ cargo test --all-targets --locked
 cargo build --release --locked
 ```
 
-GitHub ActionsはmacOS Intel・Apple Silicon、Windows x64、Linux x86_64のネイティブビルドとテストを行います。全ジョブが成功したmasterへのPushでは、同一Commitの成果物とSHA-256をGitHub Pre-releaseへ公開します。既存タグの移動・資産の上書き・Stableの変更は拒否します。`.github/workflows/build-macos.yml` はmasterへのPush、PR、手動操作で実行します。各Macで `./packaging/build-macos.sh intel` または `./packaging/build-macos.sh apple-silicon` を実行します。生成済み同名アーカイブの上書きは拒否します。アーカイブにはソースCommit、ツールチェーン情報、Cargo.lockのSHA-256と第三者ライセンス資料を含めます。署名・公証はしていません。最低macOS版とGatekeeper/quarantineの実機検査は別途必要です。
+GitHub ActionsはmacOS Intel・Apple Silicon、Windows x64、Linux x86_64のネイティブビルドとテストを行います。全ジョブが成功したmasterへのPushでは、同一Commitの成果物とSHA-256をGitHub Pre-releaseへ公開します。既存タグの移動・資産の上書き・Stableの変更は拒否します。同じ版で別Commitを公開する場合は `-pre.<Commitの先頭12桁>` 付きタグを使用し、過去の配布物を保持します。`.github/workflows/build-macos.yml` はmasterへのPush、PR、手動操作で実行します。各Macで `./packaging/build-macos.sh intel` または `./packaging/build-macos.sh apple-silicon` を実行します。生成済み同名アーカイブの上書きは拒否します。アーカイブにはソースCommit、ツールチェーン情報、Cargo.lockのSHA-256と第三者ライセンス資料を含めます。署名・公証はしていません。最低macOS版とGatekeeper/quarantineの実機検査は別途必要です。
 
 旧build-all.sh/build-linux.shはActionsから呼びません。新しいCI専用Python処理でWindows exe/zip、Linux tar.gz/deb/rpm/pacman/AppImageを生成します。Linuxはglibc 2.35以上が必要です。AppImageの公式ツールとruntimeは版とSHA-256を固定しています。
 

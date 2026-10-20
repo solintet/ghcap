@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     fs::{self, File},
     io::{Read, Write},
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
 #[derive(Debug)]
@@ -19,6 +19,7 @@ fn open_beneath(root: &File, relative: &Path) -> Result<File, String> {
         fcntl::{openat, OFlag},
         sys::stat::Mode,
     };
+    use std::path::Component;
     let mut dir = root.try_clone().map_err(|e| e.to_string())?;
     let components = relative.components().collect::<Vec<_>>();
     for (i, part) in components.iter().enumerate() {

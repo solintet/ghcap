@@ -62,7 +62,7 @@ jobs:
         if: matrix.kind == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y rpm zstd libarchive-tools
+          sudo apt-get install -y rpm zstd libarchive-tools desktop-file-utils
       - name: Package Linux formats and verify extracted binaries
         if: matrix.kind == 'linux'
         run: python3 packaging/package-linux-ci.py
@@ -99,6 +99,8 @@ jobs:
           pattern: ghcap-*
           path: release-assets
           merge-multiple: true
+      - name: Test publication safety without network
+        run: python3 packaging/test-publisher.py
       - name: Verify checksums and provenance, then publish without overwriting
         env:
           GH_TOKEN: ${{ github.token }}

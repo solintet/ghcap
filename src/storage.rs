@@ -57,6 +57,7 @@ pub fn runtime_dir() -> io::Result<PathBuf> {
     base(true)
 }
 fn private_dir(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
     let new = !path.exists();
     fs::create_dir_all(path)?;
     #[cfg(unix)]

@@ -22,6 +22,7 @@ def gh(*args):
 
 
 def main():
+    global TAG
     repo, commit = os.environ['GITHUB_REPOSITORY'], os.environ['GITHUB_SHA']
     assert gh('api', f'repos/{repo}/commits/{commit}', '--jq', '.sha') == commit
     assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip() == commit
@@ -61,6 +62,12 @@ def main():
     release = next((r for page in releases for r in page if r['tag_name'] == TAG), None)
     refs = json.loads(gh('api', f'repos/{repo}/git/matching-refs/tags/{TAG}'))
     exact = [r for r in refs if r['ref'] == f'refs/tags/{TAG}']
+    if (exact and gh('api', f'repos/{repo}/commits/{TAG}', '--jq', '.sha') != commit) or (release and not release['prerelease']):
+        # Preserve prior builds: publish a uniquely identified preview instead.
+        TAG = 'v' + VERSION + '-pre.' + commit[:12]
+        refs = json.loads(gh('api', f'repos/{repo}/git/matching-refs/tags/{TAG}'))
+        exact = [r for r in refs if r['ref'] == f'refs/tags/{TAG}']
+        release = next((r for page in releases for r in page if r['tag_name'] == TAG), None)
     if exact:
         assert gh('api', f'repos/{repo}/commits/{TAG}', '--jq', '.sha') == commit, 'Existing tag points to another commit; refusing to move it'
     if release is not None:
@@ -88,7 +95,8 @@ def main():
                 target.parent.mkdir(exist_ok=True)
                 gh('release', 'download', TAG, '--repo', repo, '--pattern', p.name, '--dir', str(target.parent))
                 assert hashlib.sha256(target.read_bytes()).digest() == hashlib.sha256(p.read_bytes()).digest(), f'Existing asset differs: {p.name}; never clobber'
-            else:
+        for p in sorted(DIST.iterdir()):
+            if p.name not in existing:
                 gh('release', 'upload', TAG, str(p), '--repo', repo)
         uploaded = json.loads(gh('api', f'repos/{repo}/releases/{release["id"]}'))
         remote_assets = {a['name']: a for a in uploaded['assets']}
