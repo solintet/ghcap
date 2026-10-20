@@ -17,12 +17,14 @@ case "$1" in
     TARGET="x86_64-apple-darwin"
     ARCHIVE_ARCH="intel"
     EXPECTED_UNAME="x86_64"
+    EXPECTED_MACHO="x86_64"
     export MACOSX_DEPLOYMENT_TARGET="10.13"
     ;;
   apple-silicon)
     TARGET="aarch64-apple-darwin"
     ARCHIVE_ARCH="apple-silicon"
     EXPECTED_UNAME="arm64"
+    EXPECTED_MACHO="arm64"
     export MACOSX_DEPLOYMENT_TARGET="11.0"
     ;;
   *) usage ;;
@@ -61,7 +63,7 @@ trap 'rm -rf "$STAGE"' EXIT HUP INT TERM
 install -m 0755 "$BINARY" "$STAGE/ghcap"
 cp README.md LICENSE DEPENDENCIES.md THIRD_PARTY_NOTICES.md "$STAGE/"
 cp -R THIRD_PARTY_LICENSES "$STAGE/"
-file "$BINARY" | grep -q "$(case "$ARCHIVE_ARCH" in intel) echo x86_64;; *) echo arm64;; esac)" || { echo "ERROR: Binary architecture mismatch." >&2; exit 1; }
+file "$BINARY" | grep -q "$EXPECTED_MACHO" || { echo "ERROR: Binary architecture mismatch." >&2; exit 1; }
 "$BINARY" --version | grep -qx "ghcap $RELEASE_VERSION"
 git rev-parse HEAD > "$STAGE/SOURCE_COMMIT.txt"
 git diff --quiet HEAD -- || { echo "ERROR: Dirty source cannot be packaged." >&2; exit 1; }
