@@ -42,9 +42,9 @@ cargo test --all-targets --locked
 cargo build --release --locked
 ```
 
-GitHub ActionsはmacOS Intel・Apple Siliconのネイティブビルド、テスト、パッケージ、SHA-256生成のみです。`.github/workflows/build-macos.yml` はmasterへのPush、PR、手動操作で実行します。各Macで `./packaging/build-macos.sh intel` または `./packaging/build-macos.sh apple-silicon` を実行します。生成済み同名アーカイブの上書きは拒否します。アーカイブにはソースCommit、ツールチェーン情報、Cargo.lockのSHA-256と第三者ライセンス資料を含めます。署名・公証はしていません。最低macOS版とGatekeeper/quarantineの実機検査は別途必要です。
+GitHub ActionsはmacOS Intel・Apple Silicon、Windows x64、Linux x86_64のネイティブビルドとテストを行います。全ジョブが成功したmasterへのPushでは、同一Commitの成果物とSHA-256をGitHub Pre-releaseへ公開します。既存タグの移動・資産の上書き・Stableの変更は拒否します。`.github/workflows/build-macos.yml` はmasterへのPush、PR、手動操作で実行します。各Macで `./packaging/build-macos.sh intel` または `./packaging/build-macos.sh apple-silicon` を実行します。生成済み同名アーカイブの上書きは拒否します。アーカイブにはソースCommit、ツールチェーン情報、Cargo.lockのSHA-256と第三者ライセンス資料を含めます。署名・公証はしていません。最低macOS版とGatekeeper/quarantineの実機検査は別途必要です。
 
-既存のWindows/Linux補助スクリプトは旧経路として残しています。この版の検証・配布経路では実行せず、それらのCIやパッケージは追加しません。
+旧build-all.sh/build-linux.shはActionsから呼びません。新しいCI専用Python処理でWindows exe/zip、Linux tar.gz/deb/rpm/pacman/AppImageを生成します。Linuxはglibc 2.35以上が必要です。AppImageの公式ツールとruntimeは版とSHA-256を固定しています。
 
 公開版表示は `0.0.29.0`、Cargoの3要素SemVerは `0.29.0` です。過去の `0.0.29.8` とは別のユーザー指定番号であり、過去のタグ・成果物を置き換えません。
 

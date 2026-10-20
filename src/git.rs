@@ -393,6 +393,7 @@ pub(crate) mod tests {
             ("user.email", "audit@example.invalid"),
             ("commit.gpgsign", "false"),
             ("core.fsmonitor", "false"),
+            ("core.autocrlf", "false"),
         ] {
             git_in(Some(d.path()), &["config", k, v]).unwrap();
         }
@@ -430,6 +431,7 @@ pub(crate) mod tests {
         assert!(set_origin(&sub, "https://example.invalid/repo").is_err());
         assert!(!has_origin(d.path()));
     }
+    #[cfg(unix)]
     #[test]
     fn trailing_space_root_preserved() {
         let d = tempfile::tempdir().unwrap();

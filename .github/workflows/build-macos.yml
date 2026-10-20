@@ -1,4 +1,4 @@
-name: Build macOS
+name: Build and publish Pre-release
 
 on:
   push:
@@ -7,58 +7,99 @@ on:
     branches: [master]
   workflow_dispatch:
     inputs:
-      architecture:
-        description: Which macOS architecture to build
-        required: true
-        type: choice
-        default: both
-        options:
-          - intel
-          - apple-silicon
-          - both
+      publish:
+        description: Publish the verified packages as a Pre-release (master only)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: ghcap-packages-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build-intel:
-    name: Build macOS Intel (x86_64)
-    if: github.event_name != 'workflow_dispatch' || inputs.architecture == 'intel' || inputs.architecture == 'both'
-    runs-on: macos-15-intel
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            os: ubuntu-22.04
+            kind: linux
+          - platform: windows-x64
+            os: windows-2022
+            kind: windows
+          - platform: macos-intel
+            os: macos-15-intel
+            kind: macos
+            architecture: intel
+          - platform: macos-apple-silicon
+            os: macos-15
+            kind: macos
+            architecture: apple-silicon
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Preserve repository line endings
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Build and package Intel binary
-        run: ./packaging/build-macos.sh intel
+      - name: Check and test native Windows or Linux
+        if: matrix.kind != 'macos'
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo build --release --locked
+      - name: Install Linux packaging tools
+        if: matrix.kind == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm zstd libarchive-tools
+      - name: Package Linux formats and verify extracted binaries
+        if: matrix.kind == 'linux'
+        run: python3 packaging/package-linux-ci.py
+      - name: Validate pacman metadata with pacman
+        if: matrix.kind == 'linux'
+        run: |
+          docker run --rm -v "$PWD/dist:/packages:ro" archlinux:base bash -c 'pacman -Qp /packages/*.pkg.tar.zst'
+      - name: Package native Windows executable
+        if: matrix.kind == 'windows'
+        run: python packaging/package-windows-ci.py
+      - name: Build, test and package native macOS
+        if: matrix.kind == 'macos'
+        run: ./packaging/build-macos.sh '${{ matrix.architecture }}'
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: ghcap-macos-intel
+          name: ghcap-${{ matrix.platform }}
           path: |
-            dist/ghcap-v*-macos-intel.tar.gz
-            dist/ghcap-v*-macos-intel.tar.gz.sha256
-            dist/SHA256SUMS
+            dist/*
+            !dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
 
-  build-apple-silicon:
-    name: Build macOS Apple Silicon (arm64)
-    if: github.event_name != 'workflow_dispatch' || inputs.architecture == 'apple-silicon' || inputs.architecture == 'both'
-    runs-on: macos-15
+  prerelease:
+    name: Publish verified Pre-release
+    needs: build
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v8.0.2
         with:
-          components: rustfmt, clippy
-      - name: Build and package Apple Silicon binary
-        run: ./packaging/build-macos.sh apple-silicon
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: ghcap-macos-apple-silicon
-          path: |
-            dist/ghcap-v*-macos-apple-silicon.tar.gz
-            dist/ghcap-v*-macos-apple-silicon.tar.gz.sha256
-            dist/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 30
+          pattern: ghcap-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify checksums and provenance, then publish without overwriting
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 packaging/publish-prerelease.py

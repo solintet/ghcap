@@ -60,6 +60,12 @@ pub fn validate_tag(tag: &str) -> Result<(), String> {
     crate::git::git(&["check-ref-format", &format!("refs/tags/{tag}")]).map(|_| ())
 }
 pub fn collect_bundle(directory: &Path) -> Result<ReleaseBundle, String> {
+    if cfg!(not(unix)) {
+        return Err(
+            "Folder upload is disabled until safe no-follow support is verified on this platform."
+                .into(),
+        );
+    }
     if fs::symlink_metadata(directory)
         .map_err(|e| e.to_string())?
         .file_type()
@@ -300,6 +306,7 @@ mod tests {
         fs::write(d.path().join("app.zip"), b"old").unwrap();
         d
     }
+    #[cfg(unix)]
     #[test]
     fn snapshot_is_immutable_from_source() {
         let d = fixture();
@@ -307,6 +314,7 @@ mod tests {
         fs::write(d.path().join("app.zip"), b"new").unwrap();
         assert_eq!(fs::read(&b.assets[0]).unwrap(), b"old");
     }
+    #[cfg(unix)]
     #[test]
     fn duplicate_names_rejected() {
         let d = fixture();
@@ -318,6 +326,7 @@ mod tests {
     fn help_tag_rejected_before_cli() {
         assert!(validate_tag("--help").is_err());
     }
+    #[cfg(unix)]
     #[test]
     fn hash_filename_rejected() {
         let d = fixture();
@@ -332,10 +341,20 @@ mod tests {
         std::os::unix::fs::symlink("/etc/passwd", d.path().join("release-notes.md")).unwrap();
         assert!(collect_bundle(d.path()).is_err());
     }
+    #[cfg(not(unix))]
+    #[test]
+    fn unsupported_folder_upload_is_explicit() {
+        let d = fixture();
+        assert!(collect_bundle(d.path()).unwrap_err().contains("disabled"));
+    }
     #[test]
     fn batches_are_bounded() {
         let d = fixture();
-        let mut b = collect_bundle(d.path()).unwrap();
+        let mut b = ReleaseBundle {
+            notes_file: d.path().join("release-notes.md"),
+            assets: Vec::new(),
+            _snapshot: d,
+        };
         b.assets = (0..20000)
             .map(|i| b._snapshot.path().join(format!("asset-{i:08}.zip")))
             .collect();
