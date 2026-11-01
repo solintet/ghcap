@@ -33,15 +33,20 @@ cat "$DIST"/*.sha256 > "$DIST/SHA256SUMS"
 
 # EN: Distinguish absent tags from API errors; an existing tag is never rewritten.
 # JA: タグ未作成とAPI失敗を区別し、既存タグは一切移動しません。
-refs=$(gh api "repos/$REPO/git/matching-refs/tags/$TAG")
+# EN: The exact matching-refs endpoint can return HTTP 404 when a preview tag has not been created yet.
+# JA: 未作成の開発版タグに対する個別照会が404となっても、公開処理を中断しないよう既存タグ一覧から完全一致で探します。
+echo "[publisher] Checking existing tags / 既存タグの照会: $TAG"
+refs=$(gh api "repos/$REPO/git/matching-refs/tags")
 ref_sha=$(jq -r --arg tag "refs/tags/$TAG" '[.[] | select(.ref == $tag) | .object.sha] | first // empty' <<<"$refs")
 if [[ "$MODE" == stable && -z "$ref_sha" ]]; then echo 'Stable tag must exist / 正式タグが存在しません' >&2; exit 1; fi
 if [[ -n "$ref_sha" ]]; then
   actual_commit=$(gh api "repos/$REPO/commits/$TAG" --jq .sha)
   [[ "$actual_commit" == "$SHA" ]] || { echo 'Tag points elsewhere; refusing to move / タグの移動を拒否します' >&2; exit 1; }
 else
+  echo "[publisher] Creating tag / タグ作成: $TAG"
   gh api --method POST "repos/$REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" >/dev/null
 fi
+echo "[publisher] Checking existing releases / 既存Releaseの照会"
 releases=$(gh api --paginate "repos/$REPO/releases?per_page=100" --slurp)
 existing=$(jq -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)] | first // empty' <<<"$releases")
 if [[ -n "$existing" ]]; then
@@ -63,6 +68,7 @@ fi
 cat -- "$NOTES" > "$WORK/notes.md"
 printf '\n\nSource Commit: `%s`\nActions: https://github.com/%s/actions/runs/%s\n' "$SHA" "$REPO" "$RUN_ID" >> "$WORK/notes.md"
 if [[ -z "$existing" ]]; then
+  echo "[publisher] Creating draft / Draftの作成: $TAG"
   args=(release create "$TAG" --repo "$REPO" --verify-tag --target "$SHA" --draft --title "ghcap $TAG" --notes-file "$WORK/notes.md")
   if [[ "$MODE" == preview ]]; then args+=(--prerelease); fi
   gh "${args[@]}" >/dev/null
@@ -70,10 +76,16 @@ fi
 # EN: Server-side draft state and target are revalidated after creation.
 # JA: Draft作成後にもサーバー側タグと対象コミットを再確認します。
 [[ $(gh api "repos/$REPO/commits/$TAG" --jq .sha) == "$SHA" ]] || { echo 'Tag moved unexpectedly / タグが変化しました' >&2; exit 1; }
-current=$(gh api "repos/$REPO/releases/tags/$TAG")
+# EN: List the authenticated releases, including drafts, rather than using an endpoint that can hide draft releases.
+# JA: Draftを取得できない場合のあるタグ直接参照を避け、認証済みのRelease一覧から完全一致で取得します。
+echo "[publisher] Checking draft visibility / Draftの取得確認: $TAG"
+releases=$(gh api --paginate "repos/$REPO/releases?per_page=100" --slurp)
+current=$(jq -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)] | first // empty' <<<"$releases")
+[[ -n "$current" ]] || { echo "Draft not found in release list / Release一覧にDraftがありません: $TAG" >&2; exit 1; }
 [[ $(jq -r .draft <<<"$current") == true ]] || { echo 'Release is no longer a draft / Draftではありません' >&2; exit 1; }
 release_id=$(jq -r .id <<<"$current")
 shopt -s nullglob
+echo "[publisher] Uploading and checking release assets / 配布物を照合・アップロード"
 for path in "$DIST"/*; do
   name=${path##*/}
   if jq -e --arg name "$name" '.assets[] | select(.name == $name)' <<<"$current" >/dev/null; then

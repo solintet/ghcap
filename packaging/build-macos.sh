@@ -48,15 +48,22 @@ if [ ! -f Cargo.lock ]; then
   echo "ERROR: A reviewed Cargo.lock is required." >&2
   exit 1
 fi
-rustup target list --installed | grep -qx "$TARGET" || { echo "ERROR: Install the Rust target before packaging / ターゲットを事前導入してください" >&2; exit 1; }
+# EN: Use the native host target so Cargo can reuse already compiled host-side dependencies.
+# JA: ネイティブ環境のコンパイル資産を再利用するため、不要な --target 指定を避けます。
+HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
+[ "$HOST_TARGET" = "$TARGET" ] || { echo "ERROR: Unexpected Rust host target: $HOST_TARGET" >&2; exit 1; }
 mkdir -p "$DIST"
-cargo fmt --all -- --check
-cargo clippy --all-targets --all-features --locked -- -D warnings
-cargo check --all-targets --all-features --locked
-cargo test --all-targets --all-features --locked
-cargo build --release --locked --target "$TARGET"
+# EN: The CI quality-gate step already ran these checks on this host.
+# JA: CIでは品質検査が先に済んでいるため、同じ検査の2回目を省略します。
+if [ "${GHCAP_MAC_QUALITY_DONE:-0}" != "1" ]; then
+  cargo fmt --all -- --check
+  cargo clippy --all-targets --all-features --locked -- -D warnings
+  cargo check --all-targets --all-features --locked
+  cargo test --all-targets --all-features --locked
+fi
+cargo build --release --locked
 
-BINARY="$ROOT/target/$TARGET/release/ghcap"
+BINARY="$ROOT/target/release/ghcap"
 [ -s "$BINARY" ] || { echo "ERROR: Expected binary not found: $BINARY" >&2; exit 1; }
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/ghcap-package.XXXXXXXX")
 trap 'rm -rf "$STAGE"' EXIT HUP INT TERM

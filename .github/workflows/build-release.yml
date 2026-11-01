@@ -57,6 +57,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: 'rustfmt, clippy'
+      # EN: Restore compiled Rust dependencies across runs to speed up macOS and other native CI.
+      # JA: macOSを含む各環境でRust依存ライブラリのビルド成果物を再利用します。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+          cache-on-failure: true
       # EN: Lockfile prevents unreviewed transitive dependency resolution.
       # JA: lockfileにより未検証の間接依存更新を防ぎます。
       # EN: Reject accidental reintroduction of Python tooling.
@@ -68,6 +74,7 @@ jobs:
           bash -n build-install.sh packaging/*.sh tests/*.sh
           bash tests/publisher-offline.sh
           bash tests/publisher-state.sh
+          bash tests/publisher-preview.sh
       - name: Rust quality gates / Rust品質検査
         run: |
           cargo fmt --all -- --check
@@ -93,6 +100,8 @@ jobs:
         run: pwsh -NoProfile -File packaging/package-windows-ci.ps1
       - name: Build and package macOS / macOSビルド
         if: matrix.kind == 'macos'
+        env:
+          GHCAP_MAC_QUALITY_DONE: "1"
         run: sh packaging/build-macos.sh '${{ matrix.architecture }}'
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -126,6 +135,7 @@ jobs:
         run: |
           bash tests/publisher-offline.sh
           bash tests/publisher-state.sh
+          bash tests/publisher-preview.sh
       - name: Check stable release tag / 正式版タグの検証
         if: startsWith(github.ref, 'refs/tags/')
         run: |

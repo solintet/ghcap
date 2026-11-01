@@ -35,7 +35,7 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$MOCK_LOG"
 args="$*"
 case "$args" in
-  *"git/matching-refs/tags/"*)
+  *"git/matching-refs/tags")
     printf '[{"ref":"refs/tags/%s","object":{"sha":"%s"}}]\n' "$MOCK_TAG" "$MOCK_SHA"
     ;;
   *"commits/"*)
