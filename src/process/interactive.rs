@@ -1,9 +1,9 @@
 //! EN: Hand over the foreground terminal safely for interactive auth.
 //! JA: 対話的な認証処理へ端末を一時的に渡し、終了時に復元します。
-use super::{
-    executor::{stop_child, Foreground},
-    shutting_down,
-};
+use super::{executor::stop_child, shutting_down};
+
+#[cfg(unix)]
+use super::executor::Foreground;
 use std::{
     process::Command,
     thread,

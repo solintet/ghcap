@@ -93,7 +93,7 @@ jobs:
         run: pwsh -NoProfile -File packaging/package-windows-ci.ps1
       - name: Build and package macOS / macOSビルド
         if: matrix.kind == 'macos'
-        run: ./packaging/build-macos.sh '${{ matrix.architecture }}'
+        run: sh packaging/build-macos.sh '${{ matrix.architecture }}'
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: ghcap-${{ matrix.platform }}

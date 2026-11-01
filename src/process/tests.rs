@@ -1,7 +1,10 @@
 //! EN: Process safety regression tests.
 //! JA: 外部プロセスの安全性に関する回帰テストです。
-use super::executor::{append_tail, execute};
+use super::executor::append_tail;
+#[cfg(unix)]
+use super::executor::execute;
 use super::*;
+#[cfg(unix)]
 use std::{
     process::Command,
     time::{Duration, Instant},

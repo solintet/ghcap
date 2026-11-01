@@ -39,7 +39,8 @@ cp "$BIN" "$STAGE/ghcap"
 cp -a "$DOCS/." "$STAGE/documentation/"
 printf 'Run ./ghcap from a terminal. Git and compatible GitHub CLI are external dependencies.\nターミナルから ./ghcap を起動します。Git・対応版ghは別途必要です。\n' > "$STAGE/INSTALL.txt"
 tar -C "$WORK" -czf "$DIST/${EXPECTED[0]}" "$(basename "$STAGE")"
-tar -tzf "$DIST/${EXPECTED[0]}" | grep -q '/documentation/SOURCE_COMMIT.txt$' || fail 'Invalid tarball / tar.gzの内容が不正'
+tar -tzf "$DIST/${EXPECTED[0]}" > "$WORK/tar-contents.txt"
+grep -Fxq "$(basename "$STAGE")/documentation/SOURCE_COMMIT.txt" "$WORK/tar-contents.txt" || fail 'Invalid tarball / tar.gzの内容が不正'
 
 # EN: Debian uses explicit binary payload and does not silently install system packages.
 # JA: Debian版は既存の実行ファイルを梱包し、生成時に依存ソフトを導入しません。
@@ -113,7 +114,8 @@ optdepend = gnupg: GPG signing
 PKG
 bsdtar --uid 0 --gid 0 -cf "$WORK/pacman.tar" -C "$WORK/pacman" .PKGINFO usr
 zstd -q -19 "$WORK/pacman.tar" -o "$DIST/${EXPECTED[3]}"
-bsdtar -tf "$DIST/${EXPECTED[3]}" | grep -q '/usr/bin/ghcap$\|^usr/bin/ghcap$' || fail 'Invalid Pacman payload / Pacmanに不整合があります'
+bsdtar -tf "$DIST/${EXPECTED[3]}" > "$WORK/pacman-contents.txt"
+grep -Eq '^(\./)?usr/bin/ghcap$' "$WORK/pacman-contents.txt" || fail 'Invalid Pacman payload / Pacmanに不整合があります'
 
 # EN: Refuse unverified AppImage tooling; pin official tool and runtime digests.
 # JA: 署名未確認のツールは使用せず、公式配布物のSHA-256を固定します。
