@@ -56,7 +56,7 @@ esac
 MOCK
 chmod 755 "$BASE/bin/gh"
 export PATH="$BASE/bin:$PATH"
-export GITHUB_REPOSITORY=solintet/ghcap GITHUB_SHA="$COMMIT" GITHUB_RUN_ID=123456
+export GITHUB_REPOSITORY=solintet/ghcap GITHUB_SHA="$COMMIT" GITHUB_RUN_ID=123456 GH_TOKEN=fixture
 export MOCK_SHA="$COMMIT" MOCK_LOG="$BASE/gh-calls.log"
 export GHCAP_RELEASE_MODE=stable GITHUB_REF=refs/tags/v0.0.31.0 MOCK_TAG=v0.0.31.0 MOCK_TAG_COMMIT="$COMMIT"
 if bash "$ROOT/packaging/publish-release.sh" > "$BASE/stable-output" 2>&1; then

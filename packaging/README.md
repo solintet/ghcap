@@ -19,3 +19,15 @@ ghcap の開発・公開元は **solintet** です。GitHub Actions は Linux x8
 `packaging/package-linux-ci.sh` と `packaging/package-windows-ci.ps1` は検証済みのネイティブバイナリを梱包します。macOS は `packaging/build-macos.sh` を使用します。`packaging/validate-release-assets.sh` と `tests/publisher-offline.sh` は GitHub 認証なしで実行できます。`packaging/publish-release.sh` は検証済み成果物と GitHub Actions の環境変数が必要です。
 
 従来の開発者向け配布経路は引き続き利用できますが、公式バイナリにはネイティブ Actions の検査経路を使用します。公開には明示的な GitHub 認可が必要です。スクリプトがあるだけで検証済みとは扱いません。
+
+## Separate publish pipeline / BuildとReleaseの分離（v0.0.31.0修正版）
+
+- Build workflow: `.github/workflows/build-release.yml` (`Build and verify ghcap`)
+- Publisher workflow: `.github/workflows/publish-release.yml` (`Publish ghcap from verified build`)
+- Publish from an existing run: Actions → **Publish ghcap from verified build** → **Run workflow** → input original `build_run_id`.
+- Optional Draft recovery: input `existing_release_id` for a known numeric Draft ID. No guessing / 作成済みDraftの数値IDを確認してから指定。
+- The publisher validates exactly nine build artifacts and 21 Release files using SHA256 and embedded source commit provenance, creates Drafts with the REST API, and publishes by numeric ID; **no Rust build or test compilation** occurs during publication.
+- A failed *legacy* all-in-one run may be used only when all four original `Build ...` matrix jobs were successful and its artifacts are still retained.
+- Rust cache is an optimization, not a guarantee of a zero-second rebuild. Distinct native runners have distinct target directories and may recompile dependencies after cache expiry, Rust-version changes, or source changes.
+
+See [`RELEASE_WORKFLOW_PLAN.md`](../RELEASE_WORKFLOW_PLAN.md) for Japanese and English recovery instructions.

@@ -93,3 +93,7 @@ BSD-2-Clause; see [LICENSE](LICENSE). Third-party notices and license texts are 
 **solintet** maintains and publishes ghcap through the [solintet/ghcap](https://github.com/solintet/ghcap) repository. Existing third-party notices and contributor copyrights remain applicable.
 
 **ghcap の開発・公開名義は solintet** です。公開リポジトリは [solintet/ghcap](https://github.com/solintet/ghcap) です。既存の貢献者・第三者の著作権およびライセンス表示は引き続き適用されます。
+
+### Release builds and publication / ビルド・公開の分離
+
+GitHub Actionsの4環境ビルドは`Build and verify ghcap`で、Release公開は独立した`Publish ghcap from verified build`で行います。公開が失敗しても、Actionsの手動実行画面から成功済みビルドのRun IDを指定すれば、保存済みArtifactを再検証して**公開のみ再実行**できます。旧一体型Runも4つのビルドジョブがすべて成功した場合に限り救済できます。詳しくは[`RELEASE_WORKFLOW_PLAN.md`](RELEASE_WORKFLOW_PLAN.md)を参照してください。

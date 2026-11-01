@@ -17,3 +17,9 @@ The publisher expects `GITHUB_SHA`, `GITHUB_REPOSITORY`, `GITHUB_REF`, `GITHUB_R
 4. 公開スクリプトは既存タグ移動、異なるAssetsの上書き、公開済みReleaseの変更を拒否します。修正版は新しいバージョン・タグで公開してください。
 
 Actionsから`GITHUB_SHA`、`GITHUB_REPOSITORY`、`GITHUB_REF`、`GITHUB_RUN_ID`、`GH_TOKEN`、`GHCAP_RELEASE_MODE`を受け取ります。
+
+## 2026-11-01: independent publish + recovery / 公開のみ再実行
+
+Build and Release are separate Actions workflows. `Build and verify ghcap` creates native artifacts for Linux x86_64, Windows x64, macOS Intel and macOS Apple Silicon. `Publish ghcap from verified build` downloads these artifacts using their original run ID, checks the source commit and per-asset hashes, creates or resumes a Draft via its numeric GitHub release ID and publishes it without rebuilding.
+
+To retry an existing build, manually dispatch `Publish ghcap from verified build` and specify its original `build_run_id` and `release_mode`. For a Draft that is not visible in the Release listing, optionally provide `existing_release_id`. Original monolithic build Runs that ended in release-publication failure can be recovered only if **all four Build jobs succeeded**. See [`RELEASE_WORKFLOW_PLAN.md`](../../RELEASE_WORKFLOW_PLAN.md) for full instructions.

@@ -1,121 +1,143 @@
 #!/usr/bin/env bash
-# EN: Publish verified artifacts without moving tags or replacing published releases.
-# JA: タグを移動せず、公開済みReleaseを変更せずに検証済み成果物だけを公開します。
+# EN: Publish a separately verified build. Drafts are addressed by numeric API ID, never list visibility.
+# JA: 検証済み成果物のみを公開。作成したDraftは一覧検索せず、数値IDで操作します。
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
-for tool in gh git jq sha256sum tar unzip mktemp; do command -v "$tool" >/dev/null || { echo "Missing tool / ツール不足: $tool" >&2; exit 127; }; done
+for tool in gh git jq sha256sum tar unzip curl mktemp; do command -v "$tool" >/dev/null || { echo "Missing tool: $tool" >&2; exit 127; }; done
 REPO=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}
-SHA=${GITHUB_SHA:?GITHUB_SHA is required}
-REF=${GITHUB_REF:?GITHUB_REF is required}
+SHA=${GHCAP_SOURCE_SHA:-${GITHUB_SHA:?GITHUB_SHA is required}}
+REF=${GHCAP_SOURCE_REF:-${GITHUB_REF:?GITHUB_REF is required}}
 MODE=${GHCAP_RELEASE_MODE:-preview}
-RUN_ID=${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}
+RUN_ID=${GHCAP_BUILD_RUN_ID:-${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}}
+RELEASE_ID_OVERRIDE=${GHCAP_RELEASE_ID:-}
 VERSION=0.0.31.0
 DIST="$ROOT/release-assets"
-[[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'Invalid GitHub repository / 不正なリポジトリ' >&2; exit 1; }
-[[ "$SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo 'Invalid commit / 不正なSHA' >&2; exit 1; }
+[[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'Invalid repository' >&2; exit 1; }
+[[ "$SHA" =~ ^[0-9a-fA-F]{40}$ && "$RUN_ID" =~ ^[0-9]+$ ]] || { echo 'Invalid source commit or build Run ID' >&2; exit 1; }
+[[ -z "$RELEASE_ID_OVERRIDE" || "$RELEASE_ID_OVERRIDE" =~ ^[0-9]+$ ]] || { echo 'Invalid numeric Draft ID' >&2; exit 1; }
+[[ -n "${GH_TOKEN:-}" ]] || { echo 'GH_TOKEN is required' >&2; exit 1; }
 case "$MODE:$REF" in
   preview:refs/heads/master) TAG="v$VERSION-pre.${SHA:0:12}" ;;
   stable:refs/tags/v0.0.31.0) TAG="v$VERSION" ;;
-  *) echo 'Invalid release mode/ref / 公開モードと参照が一致しません' >&2; exit 1 ;;
+  *) echo 'Invalid release mode/ref / 公開モードと対象が一致しません' >&2; exit 1 ;;
 esac
-[[ $(git rev-parse --verify HEAD) == "$SHA" ]] || { echo 'Checkout SHA mismatch / ソースが別のコミットです' >&2; exit 1; }
-[[ $(gh api "repos/$REPO/commits/$SHA" --jq .sha) == "$SHA" ]] || { echo 'Remote commit differs / リモートコミットが異なります' >&2; exit 1; }
+# EN: Publisher may be newer than the build; archive the original build commit, not current master.
+# JA: 公開処理だけを後から修正しても、ソースアーカイブはビルド元SHAから作ります。
+[[ $(gh api "repos/$REPO/commits/$SHA" --jq .sha) == "$SHA" ]] || { echo 'Source commit is not in repository' >&2; exit 1; }
+if ! git cat-file -e "$SHA^{commit}" 2>/dev/null; then
+  git fetch --no-tags --depth=1 origin "$SHA"
+fi
+[[ $(git rev-parse "$SHA^{commit}") == "$SHA" ]] || { echo 'Unavailable source commit' >&2; exit 1; }
 "$ROOT/packaging/validate-release-assets.sh" "$DIST" "$SHA"
 SOURCE="ghcap-v${VERSION}-source.tar.gz"
-[[ ! -e "$DIST/$SOURCE" ]] || { echo 'Refusing to overwrite source / 既存ソースの上書きを拒否' >&2; exit 1; }
+[[ ! -e "$DIST/$SOURCE" && ! -e "$DIST/SHA256SUMS" ]] || { echo 'Refusing to overwrite previously prepared files' >&2; exit 1; }
 git archive --format=tar.gz "--prefix=ghcap-v${VERSION}/" "--output=$DIST/$SOURCE" "$SHA"
 (cd "$DIST" && sha256sum "$SOURCE" > "$SOURCE.sha256")
-# EN: Generate one checksums index only after every individual checksum has passed.
-# JA: 個別ファイルの検証完了後にのみSHA256SUMSを生成します。
-[[ ! -e "$DIST/SHA256SUMS" ]] || { echo 'Refusing to overwrite SHA256SUMS / チェックサムを上書きしません' >&2; exit 1; }
-cat "$DIST"/*.sha256 > "$DIST/SHA256SUMS"
-
-# EN: Distinguish absent tags from API errors; an existing tag is never rewritten.
-# JA: タグ未作成とAPI失敗を区別し、既存タグは一切移動しません。
-# EN: The exact matching-refs endpoint can return HTTP 404 when a preview tag has not been created yet.
-# JA: 未作成の開発版タグに対する個別照会が404となっても、公開処理を中断しないよう既存タグ一覧から完全一致で探します。
-echo "[publisher] Checking existing tags / 既存タグの照会: $TAG"
+(cd "$DIST" && cat -- ./*.sha256 > SHA256SUMS)
+[[ $(find "$DIST" -maxdepth 1 -type f | wc -l) == 21 ]] || { echo 'Release asset count mismatch' >&2; exit 1; }
+# EN: Tag references are checked before creating a new one. Existing refs are never moved.
+# JA: 既存タグの移動や公開済みReleaseの変更は禁止します。
 refs=$(gh api "repos/$REPO/git/matching-refs/tags")
 ref_sha=$(jq -r --arg tag "refs/tags/$TAG" '[.[] | select(.ref == $tag) | .object.sha] | first // empty' <<<"$refs")
-if [[ "$MODE" == stable && -z "$ref_sha" ]]; then echo 'Stable tag must exist / 正式タグが存在しません' >&2; exit 1; fi
 if [[ -n "$ref_sha" ]]; then
   actual_commit=$(gh api "repos/$REPO/commits/$TAG" --jq .sha)
-  [[ "$actual_commit" == "$SHA" ]] || { echo 'Tag points elsewhere; refusing to move / タグの移動を拒否します' >&2; exit 1; }
+  [[ "$actual_commit" == "$SHA" ]] || { echo 'Existing tag points to another commit' >&2; exit 1; }
 else
-  echo "[publisher] Creating tag / タグ作成: $TAG"
+  [[ "$MODE" == preview ]] || { echo 'Stable tag must already exist' >&2; exit 1; }
   gh api --method POST "repos/$REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" >/dev/null
-fi
-echo "[publisher] Checking existing releases / 既存Releaseの照会"
-releases=$(gh api --paginate "repos/$REPO/releases?per_page=100" --slurp)
-existing=$(jq -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)] | first // empty' <<<"$releases")
-if [[ -n "$existing" ]]; then
-  [[ $(jq -r .draft <<<"$existing") == true ]] || { echo 'Published Release is immutable / 公開済みReleaseは変更しません' >&2; exit 1; }
-  if [[ "$MODE" == preview ]]; then
-    [[ $(jq -r .prerelease <<<"$existing") == true ]] || { echo 'Draft has wrong prerelease state' >&2; exit 1; }
-  else
-    [[ $(jq -r .prerelease <<<"$existing") == false ]] || { echo 'Draft has wrong stable state' >&2; exit 1; }
-  fi
 fi
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/ghcap-release.XXXXXXXX")
 trap 'rm -rf -- "$WORK"' EXIT
-if [[ "$MODE" == stable ]]; then
-  NOTES="$ROOT/RELEASE_NOTES_v0.0.31.0.md"
+if [[ "$MODE" == stable ]]; then NOTES="$ROOT/RELEASE_NOTES_v0.0.31.0.md"; else NOTES="$ROOT/packaging/prerelease-notes.md"; fi
+[[ -s "$NOTES" ]] || { echo 'Missing Release Notes' >&2; exit 1; }
+cat "$NOTES" > "$WORK/notes.md"
+printf '\n\nSource Commit: `%s`\nSource Build: https://github.com/%s/actions/runs/%s\n' "$SHA" "$REPO" "$RUN_ID" >> "$WORK/notes.md"
+prerelease=false
+[[ "$MODE" == preview ]] && prerelease=true
+# EN: Optional ID override recovers a pre-existing invisible draft without guessing.
+# JA: 既存Draftが一覧に出ない場合に数値IDを指定して安全に再開できます。
+if [[ -n "$RELEASE_ID_OVERRIDE" ]]; then
+  release_id=$RELEASE_ID_OVERRIDE
+  current=$(gh api "repos/$REPO/releases/$release_id")
 else
-  NOTES="$ROOT/packaging/prerelease-notes.md"
+  releases=$(gh api --paginate "repos/$REPO/releases?per_page=100" --slurp)
+  current=$(jq -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)] | first // empty' <<<"$releases")
+  if [[ -n "$current" ]]; then
+    release_id=$(jq -r .id <<<"$current")
+  else
+    # EN: Creation returns the authoritative release ID. Do not immediately scan an eventually consistent list.
+    # JA: POSTの応答IDを保持し、作成直後の一覧再検索には依存しません。
+    jq -n --arg tag "$TAG" --arg sha "$SHA" --arg title "ghcap $TAG" \
+       --rawfile notes "$WORK/notes.md" --argjson pre "$prerelease" \
+       '{tag_name:$tag,target_commitish:$sha,name:$title,body:$notes,draft:true,prerelease:$pre,generate_release_notes:false}' > "$WORK/create.json"
+    echo "[publisher] Creating draft by REST API / IDを取得してDraft作成: $TAG"
+    if ! current=$(gh api --method POST "repos/$REPO/releases" --input "$WORK/create.json"); then
+      echo 'Create failed. If a hidden Draft exists, rerun with existing_release_id (numeric ID).' >&2
+      exit 1
+    fi
+    release_id=$(jq -r .id <<<"$current")
+  fi
 fi
-[[ -s "$NOTES" ]] || { echo 'Missing notes / Release Notesがありません' >&2; exit 1; }
-cat -- "$NOTES" > "$WORK/notes.md"
-printf '\n\nSource Commit: `%s`\nActions: https://github.com/%s/actions/runs/%s\n' "$SHA" "$REPO" "$RUN_ID" >> "$WORK/notes.md"
-if [[ -z "$existing" ]]; then
-  echo "[publisher] Creating draft / Draftの作成: $TAG"
-  args=(release create "$TAG" --repo "$REPO" --verify-tag --target "$SHA" --draft --title "ghcap $TAG" --notes-file "$WORK/notes.md")
-  if [[ "$MODE" == preview ]]; then args+=(--prerelease); fi
-  gh "${args[@]}" >/dev/null
-fi
-# EN: Server-side draft state and target are revalidated after creation.
-# JA: Draft作成後にもサーバー側タグと対象コミットを再確認します。
-[[ $(gh api "repos/$REPO/commits/$TAG" --jq .sha) == "$SHA" ]] || { echo 'Tag moved unexpectedly / タグが変化しました' >&2; exit 1; }
-# EN: List the authenticated releases, including drafts, rather than using an endpoint that can hide draft releases.
-# JA: Draftを取得できない場合のあるタグ直接参照を避け、認証済みのRelease一覧から完全一致で取得します。
-echo "[publisher] Checking draft visibility / Draftの取得確認: $TAG"
-releases=$(gh api --paginate "repos/$REPO/releases?per_page=100" --slurp)
-current=$(jq -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)] | first // empty' <<<"$releases")
-[[ -n "$current" ]] || { echo "Draft not found in release list / Release一覧にDraftがありません: $TAG" >&2; exit 1; }
-[[ $(jq -r .draft <<<"$current") == true ]] || { echo 'Release is no longer a draft / Draftではありません' >&2; exit 1; }
-release_id=$(jq -r .id <<<"$current")
+[[ "$release_id" =~ ^[0-9]+$ ]] || { echo 'Release creation did not return a numeric ID' >&2; exit 1; }
+# EN: All subsequent reads/writes use ID: independent of tag lookup and release list propagation.
+# JA: 以後はRelease一覧・タグ検索を使わず数値IDで検証・アップロード・公開します。
+# EN: Direct by-ID reads may briefly lag creation. Retry only this lightweight API call.
+# JA: 作成直後のID照会は一時的に反映待ちとなる可能性があるため、短時間だけ再試行します。
+current=''
+for attempt in 1 2 3 4 5; do
+  if current=$(gh api "repos/$REPO/releases/$release_id"); then break; fi
+  [[ "$attempt" != 5 ]] || { echo 'Created Release ID is not readable' >&2; exit 1; }
+  sleep 1
+done
+jq -e --arg tag "$TAG" --argjson pre "$prerelease" \
+   '.tag_name==$tag and .draft==true and .prerelease==$pre' <<<"$current" >/dev/null || {
+  echo 'Release is published, mismatched, or not a draft; refusing mutation / Draftの状態が不正' >&2; exit 1;
+}
+[[ $(gh api "repos/$REPO/commits/$TAG" --jq .sha) == "$SHA" ]] || { echo 'Tag changed unexpectedly' >&2; exit 1; }
+# EN: Never delete, replace or blindly trust existing assets. Verify GitHub's SHA-256 digest.
+# JA: 再実行時は既存AssetのSHA256を比較し、削除・上書きしません。
 shopt -s nullglob
-echo "[publisher] Uploading and checking release assets / 配布物を照合・アップロード"
-for path in "$DIST"/*; do
-  name=${path##*/}
-  if jq -e --arg name "$name" '.assets[] | select(.name == $name)' <<<"$current" >/dev/null; then
-    # EN: Existing assets are only reused after byte-for-byte digest validation.
-    # JA: 既存Assetはダウンロードしてハッシュが一致する場合にだけ再利用します。
-    mkdir -p "$WORK/existing/$name"
-    gh release download "$TAG" --repo "$REPO" --pattern "$name" --dir "$WORK/existing/$name"
-    [[ $(sha256sum "$path" | cut -d ' ' -f1) == $(sha256sum "$WORK/existing/$name/$name" | cut -d ' ' -f1) ]] || { echo "Existing asset differs / 既存Assetが異なります: $name" >&2; exit 1; }
-  else
-    gh release upload "$TAG" "$path" --repo "$REPO"
+for asset in "$DIST"/*; do
+  name=${asset##*/}
+  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Unsafe asset name: $name" >&2; exit 1; }
+  current=$(gh api "repos/$REPO/releases/$release_id")
+  existing=$(jq -c --arg n "$name" '[.assets[] | select(.name==$n)] | first // empty' <<<"$current")
+  expected="sha256:$(sha256sum "$asset" | cut -d ' ' -f1)"
+  if [[ -n "$existing" ]]; then
+    actual=$(jq -r '.digest // empty' <<<"$existing")
+    [[ "$actual" == "$expected" ]] || { echo "Existing asset checksum missing/different: $name" >&2; exit 1; }
+    echo "[publisher] Reusing verified asset / 既存Assetを再利用: $name"
+    continue
   fi
+  echo "[publisher] Uploading / アップロード: $name"
+  # EN: Use the documented releases/<numeric ID>/assets endpoint instead of a tag-based CLI lookup.
+  # JA: タグ経由ではなく数値Release IDのRESTアップロードAPIを利用します。
+  curl --fail-with-body --silent --show-error \
+       --request POST --header "Authorization: Bearer $GH_TOKEN" \
+       --header 'Accept: application/vnd.github+json' \
+       --header 'Content-Type: application/octet-stream' \
+       --data-binary "@$asset" \
+       "https://uploads.github.com/repos/$REPO/releases/$release_id/assets?name=$name" > "$WORK/upload.json"
+  jq -e --arg n "$name" '.name==$n and (.id | type)=="number"' "$WORK/upload.json" >/dev/null || {
+    echo "Unexpected upload response: $name" >&2; exit 1;
+  }
 done
-# EN: Verify each uploaded asset against the server's digest or downloaded bytes.
-# JA: アップロード後もサーバーのダイジェストか実ファイルで照合します。
+# EN: Refuse to publish incomplete/extra assets; compare all 21 server digests.
+# JA: 21ファイル全件のサーバー側チェックサムを検証してから公開します。
 current=$(gh api "repos/$REPO/releases/$release_id")
-for path in "$DIST"/*; do
-  name=${path##*/}
-  digest=$(jq -r --arg name "$name" '[.assets[] | select(.name==$name) | .digest] | first // empty' <<<"$current")
-  actual="sha256:$(sha256sum "$path" | cut -d ' ' -f1)"
-  if [[ -n "$digest" ]]; then
-    [[ "$digest" == "$actual" ]] || { echo "Remote digest mismatch / サーバー照合失敗: $name" >&2; exit 1; }
-  else
-    mkdir -p "$WORK/verify/$name"
-    gh release download "$TAG" --repo "$REPO" --pattern "$name" --dir "$WORK/verify/$name"
-    [[ $(sha256sum "$WORK/verify/$name/$name" | cut -d ' ' -f1) == "${actual#sha256:}" ]] || { echo "Remote file mismatch / 配布ファイル不一致: $name" >&2; exit 1; }
-  fi
+[[ $(jq '.assets|length' <<<"$current") == 21 ]] || { echo 'Unexpected number of uploaded assets' >&2; exit 1; }
+for asset in "$DIST"/*; do
+  name=${asset##*/}
+  expected="sha256:$(sha256sum "$asset" | cut -d ' ' -f1)"
+  actual=$(jq -r --arg n "$name" '[.assets[] | select(.name==$n) | .digest] | first // empty' <<<"$current")
+  [[ "$actual" == "$expected" ]] || { echo "Remote SHA256 failed: $name" >&2; exit 1; }
 done
-if [[ "$MODE" == preview ]]; then
-  gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease --latest=false --notes-file "$WORK/notes.md"
-else
-  gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease=false --notes-file "$WORK/notes.md"
-fi
-gh release view "$TAG" --repo "$REPO" --json url --jq .url
+jq -e --arg tag "$TAG" '.tag_name==$tag and .draft==true' <<<"$current" >/dev/null || { echo 'Draft state changed' >&2; exit 1; }
+jq -n --rawfile notes "$WORK/notes.md" --argjson pre "$prerelease" \
+  '{draft:false,prerelease:$pre,body:$notes,make_latest:"false"}' > "$WORK/publish.json"
+current=$(gh api --method PATCH "repos/$REPO/releases/$release_id" --input "$WORK/publish.json")
+jq -e --arg tag "$TAG" '.tag_name==$tag and .draft==false' <<<"$current" >/dev/null || {
+  echo 'GitHub did not confirm publication' >&2; exit 1;
+}
+echo "Published / 公開成功: https://github.com/$REPO/releases/tag/$TAG"

@@ -13,12 +13,13 @@ printf 'Test release notes\n' > "$ROOT/packaging/prerelease-notes.md"
 (cd "$ROOT" && git init -q -b master && git add packaging && git -c user.name='Test' -c user.email='test@example.invalid' commit -qm 'fixture')
 COMMIT=$(git -C "$ROOT" rev-parse HEAD)
 export GITHUB_REPOSITORY=solintet/ghcap GITHUB_SHA="$COMMIT" GITHUB_REF=refs/heads/master GITHUB_RUN_ID=123456 GHCAP_RELEASE_MODE=preview
-export MOCK_SHA="$COMMIT" MOCK_TAG="v0.0.31.0-pre.${COMMIT:0:12}" MOCK_LOG="$BASE/calls.log" MOCK_REMOTE_ASSETS="$BASE/remote-assets" MOCK_DRAFT_FLAG="$BASE/draft-created" MOCK_TAG_FLAG="$BASE/tag-created" MOCK_PUBLISHED_FLAG="$BASE/published"
+export MOCK_SHA="$COMMIT" MOCK_TAG="v0.0.31.0-pre.${COMMIT:0:12}" MOCK_LOG="$BASE/calls.log" MOCK_REMOTE_ASSETS="$BASE/remote-assets" MOCK_DRAFT_FLAG="$BASE/draft-created" MOCK_TAG_FLAG="$BASE/tag-created" MOCK_PUBLISHED_FLAG="$BASE/published" GH_TOKEN=fixture
 printf '%s\n' "$COMMIT" > "$BASE/mac/SOURCE_COMMIT.txt"
 printf '%s\n' "$COMMIT" > "$BASE/win/SOURCE_COMMIT.txt"
 printf '%s\n' "$COMMIT" > "$BASE/linux/ghcap-v0.0.31.0-linux-x86_64/documentation/SOURCE_COMMIT.txt"
 printf 'test executable\n' > "$BASE/win/ghcap.exe"
 DIST="$ROOT/release-assets"
+export MOCK_DIST="$DIST"
 cp "$BASE/win/ghcap.exe" "$DIST/ghcap-v0.0.31.0-windows-x64.exe"
 (cd "$BASE/win" && zip -q "$DIST/ghcap-v0.0.31.0-windows-x64.zip" SOURCE_COMMIT.txt ghcap.exe)
 for arch in macos-intel macos-apple-silicon; do tar -C "$BASE/mac" -czf "$DIST/ghcap-v0.0.31.0-$arch.tar.gz" SOURCE_COMMIT.txt; done
@@ -27,64 +28,64 @@ for name in ghcap_0.0.31.0-1_amd64.deb ghcap-0.0.31.0-1.x86_64.rpm ghcap-0.0.31.
 for p in "$DIST"/*; do (cd "$DIST" && sha256sum "${p##*/}" > "${p##*/}.sha256"); done
 cat > "$BASE/bin/gh" <<'MOCK'
 #!/usr/bin/env bash
-# EN: Simulate GitHub's absence of a preview tag and draft existence after creation.
-# JA: 未作成タグの照会後にタグとDraftが作成される状態を模擬します。
 set -euo pipefail
 printf '%s\n' "$*" >> "$MOCK_LOG"
-case "$1" in
-  api)
-    args="$*"
-    if [[ "$args" == *"git/matching-refs/tags/"* ]]; then
-      echo 'ERROR: exact matching-refs URL must not be used for a missing preview tag' >&2
-      exit 90
-    elif [[ "$args" == *"git/matching-refs/tags"* ]]; then
-      echo '[]'
-    elif [[ "$args" == *"--method POST"* && "$args" == *"git/refs"* ]]; then
-      touch "$MOCK_TAG_FLAG"
-      echo '{}'
-    elif [[ "$args" == *"commits/"* ]]; then
-      printf '%s\n' "$MOCK_SHA"
-    elif [[ "$args" == *"releases?per_page=100"* ]]; then
-      if [[ -e "$MOCK_DRAFT_FLAG" ]]; then
-        jq -n --arg tag "$MOCK_TAG" '[[{id:321,tag_name:$tag,draft:true,prerelease:true,assets:[]}]]'
-      else
-        printf '[[]]\n'
-      fi
-    elif [[ "$args" == *"releases/321"* ]]; then
-      assets='[]'
-      for p in "$MOCK_REMOTE_ASSETS"/*; do
-        [[ -f "$p" ]] || continue
-        name=${p##*/}
-        digest="sha256:$(sha256sum "$p" | cut -d ' ' -f1)"
-        assets=$(jq -c --arg name "$name" --arg digest "$digest" '. + [{name:$name,digest:$digest}]' <<< "$assets")
-      done
-      jq -n --arg tag "$MOCK_TAG" --argjson assets "$assets" '{id:321,tag_name:$tag,draft:true,prerelease:true,assets:$assets}'
-    elif [[ "$args" == *"releases/tags/"* ]]; then
-      echo 'ERROR: draft must be fetched from authenticated releases list' >&2
-      exit 91
-    else
-      echo "ERROR: unexpected mock API: $args" >&2
-      exit 92
-    fi
+args="$*"
+case "$args" in
+  *"git/matching-refs/tags"*) printf '[]\n' ;;
+  *"--method POST"*"git/refs"*) touch "$MOCK_TAG_FLAG"; printf '{}\n' ;;
+  *"commits/"*) printf '%s\n' "$MOCK_SHA" ;;
+  *"releases?per_page=100"*) printf '[[]]\n' ;;
+  *"--method POST"*"/releases --input"*)
+    touch "$MOCK_DRAFT_FLAG"
+    jq -n --arg tag "$MOCK_TAG" '{id:321,tag_name:$tag,draft:true,prerelease:true,assets:[]}'
     ;;
-  release)
-    action=$2
-    case "$action" in
-      create) [[ -e "$MOCK_TAG_FLAG" ]] || exit 93; touch "$MOCK_DRAFT_FLAG" ;;
-      upload) cp -- "$4" "$MOCK_REMOTE_ASSETS/${4##*/}" ;;
-      edit) touch "$MOCK_PUBLISHED_FLAG" ;;
-      view) printf 'https://github.com/%s/releases/tag/%s\n' "$GITHUB_REPOSITORY" "$MOCK_TAG" ;;
-      *) echo "ERROR: unexpected release action: $action" >&2; exit 94 ;;
-    esac
+  *"--method PATCH"*"releases/321 --input"*)
+    touch "$MOCK_PUBLISHED_FLAG"
+    jq -n --arg tag "$MOCK_TAG" '{id:321,tag_name:$tag,draft:false,prerelease:true,assets:[]}'
     ;;
-  *) echo "ERROR: unexpected command: $*" >&2; exit 95 ;;
+  *"releases/321"*)
+    assets='[]'
+    for p in "$MOCK_REMOTE_ASSETS"/*; do
+      [[ -f "$p" ]] || continue
+      name=${p##*/}
+      digest="sha256:$(sha256sum "$p" | cut -d ' ' -f1)"
+      assets=$(jq -c --arg name "$name" --arg digest "$digest" '. + [{name:$name,digest:$digest}]' <<< "$assets")
+    done
+    jq -n --arg tag "$MOCK_TAG" --argjson assets "$assets" '{id:321,tag_name:$tag,draft:true,prerelease:true,assets:$assets}'
+    ;;
+  *) echo "Unexpected mock gh call: $args" >&2; exit 96 ;;
 esac
 MOCK
-chmod 755 "$BASE/bin/gh"
+cat > "$BASE/bin/curl" <<'MOCK_CURL'
+#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+name=${args##*?name=}
+[[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Invalid asset name: $name" >&2; exit 90; }
+count=$(find "$MOCK_REMOTE_ASSETS" -maxdepth 1 -type f | wc -l)
+if [[ "${MOCK_FAIL_AFTER:-0}" -gt 0 && "$count" -ge "$MOCK_FAIL_AFTER" ]]; then
+  echo 'Simulated interrupted upload' >&2; exit 22
+fi
+cp -- "$MOCK_DIST/$name" "$MOCK_REMOTE_ASSETS/$name"
+jq -n --arg name "$name" '{id:100,name:$name}'
+MOCK_CURL
+chmod 755 "$BASE/bin/gh" "$BASE/bin/curl"
 export PATH="$BASE/bin:$PATH"
+# EN: Interrupt halfway, then resume using existing draft ID and previously uploaded assets.
+# JA: アップロード途中で失敗させ、数値IDを指定して既存Assetsを再利用できるか確認します。
+export MOCK_FAIL_AFTER=7
+if bash "$ROOT/packaging/publish-release.sh" > "$BASE/interrupted.txt" 2>&1; then
+  echo 'Expected interrupted upload to fail' >&2; exit 1
+fi
+[[ $(find "$MOCK_REMOTE_ASSETS" -maxdepth 1 -type f | wc -l) == 7 ]] || { cat "$BASE/interrupted.txt" >&2; exit 1; }
+rm -f "$DIST/ghcap-v0.0.31.0-source.tar.gz" "$DIST/ghcap-v0.0.31.0-source.tar.gz.sha256" "$DIST/SHA256SUMS"
+export MOCK_FAIL_AFTER=0 GHCAP_RELEASE_ID=321
 bash "$ROOT/packaging/publish-release.sh" > "$BASE/output.txt" 2>&1 || { cat "$BASE/output.txt" >&2; exit 1; }
+[[ $(grep -c 'Reusing verified asset' "$BASE/output.txt") == 7 ]] || { echo 'Recovery did not reuse 7 verified assets' >&2; exit 1; }
+[[ $(grep -c 'api --method POST repos/solintet/ghcap/releases --input' "$MOCK_LOG") == 1 ]] || { echo 'Duplicate Draft created' >&2; exit 1; }
 [[ -e "$MOCK_TAG_FLAG" && -e "$MOCK_DRAFT_FLAG" && -e "$MOCK_PUBLISHED_FLAG" ]] || { echo 'Preview tag/draft/publish sequence not completed' >&2; exit 1; }
 count=$(find "$MOCK_REMOTE_ASSETS" -maxdepth 1 -type f | wc -l)
 [[ "$count" -eq 21 ]] || { echo "Expected 21 release assets, found $count" >&2; exit 1; }
-[[ $(grep -c '^release upload ' "$MOCK_LOG") -eq 21 ]] || { echo 'Unexpected release uploads' >&2; exit 1; }
-printf 'PASS / 成功: new preview tag, draft, 21 verified assets and publication\n'
+[[ $(grep -c '^api repos/solintet/ghcap/releases/321' "$MOCK_LOG") -ge 21 ]] || { echo 'Release ID reads missing' >&2; exit 1; }
+printf 'PASS / 成功: interrupted upload recovered by Release ID, 21 verified assets and publication\n'
