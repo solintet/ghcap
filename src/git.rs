@@ -1,3 +1,6 @@
+//! EN: Git adapter: command-line operations, reference validation and revision fingerprints. This module must not silently change remote configuration or weaken non-force Push safeguards.
+//! JA: Gitアダプター。Git参照・差分・Push送信先を検証します。remoteの無断変更や強制Pushへの置き換えを禁止します。
+
 use crate::process;
 use std::{
     fs,
@@ -145,7 +148,7 @@ pub fn same_remote(a: &str, b: &str) -> bool {
         _ => a == b,
     }
 }
-fn config(path: &Path, key: &str) -> Result<Option<String>, String> {
+pub(crate) fn config(path: &Path, key: &str) -> Result<Option<String>, String> {
     let o = process::capture("git", &["config", "--get-all", key], Some(path))?;
     match o.code {
         0 if o.success => Ok(Some(line(o.stdout))),
@@ -153,6 +156,8 @@ fn config(path: &Path, key: &str) -> Result<Option<String>, String> {
         _ => Err(process::failure("git config", &o)),
     }
 }
+/// EN: Rejects unresolved conflicts, detached HEAD and incomplete merge/rebase/cherry-pick operations before modifying the index.
+/// JA: 競合未解決・Detached HEAD・未完了のMerge/Rebase/Cherry-pickなどをStage前に検出します。
 pub fn preflight_commit(path: &Path) -> Result<(), String> {
     validate_root(path)?;
     if git_in(Some(path), &["branch", "--show-current"])?.is_empty() {
@@ -188,15 +193,20 @@ pub struct PushPlan {
     pub url: String,
     pub head: String,
 }
+/// EN: Builds a read-only Push plan containing remote URL, selected branch and exact HEAD commit; rejects ambiguous/mirror configurations.
+/// JA: Remote URL・対象ブランチ・HEADのCommitを固定した読み取り専用Push計画を作成し、曖昧な設定・Mirror設定を拒否します。
 pub fn push_plan(path: &Path) -> Result<PushPlan, String> {
     preflight_commit(path)?;
     let branch = git_in(Some(path), &["branch", "--show-current"])?;
     let head = git_in(Some(path), &["rev-parse", "--verify", "HEAD"])?;
     let remote = config(path, &format!("branch.{branch}.remote"))?
         .ok_or("No upstream remote. Set it explicitly using Git before Push.")?;
-    if remote != "origin" {
+    // EN: The upstream need not be origin, but must be a valid named remote.
+    // JA: 追跡先はorigin固定ではありませんが、実在するremoteのみ許可します。
+    let available = git_in(Some(path), &["remote"])?;
+    if !available.lines().any(|candidate| candidate == remote) || remote.starts_with('-') {
         return Err(
-            "Upstream is not origin. Review repository association using Git before Push.".into(),
+            "Upstream does not identify a valid remote / 有効なremoteではありません".into(),
         );
     }
     let target = config(path, &format!("branch.{branch}.merge"))?
@@ -205,7 +215,8 @@ pub fn push_plan(path: &Path) -> Result<PushPlan, String> {
         return Err("Invalid upstream ref.".into());
     }
     git_in(Some(path), &["check-ref-format", &target])?;
-    if config(path, "remote.origin.mirror")?.is_some_and(|s| s != "false" && s != "no" && s != "0")
+    if config(path, &format!("remote.{remote}.mirror"))?
+        .is_some_and(|s| s != "false" && s != "no" && s != "0")
     {
         return Err(
             "Mirror Push is forbidden in the normal workflow; Git settings were preserved.".into(),
@@ -217,7 +228,7 @@ pub fn push_plan(path: &Path) -> Result<PushPlan, String> {
                 .into(),
         );
     }
-    if let Some(refspec) = config(path, "remote.origin.push")? {
+    if let Some(refspec) = config(path, &format!("remote.{remote}.push"))? {
         if refspec.lines().count() != 1
             || refspec.starts_with('+')
             || refspec.contains('*')
@@ -231,12 +242,12 @@ pub fn push_plan(path: &Path) -> Result<PushPlan, String> {
     }
     let urls = git_in(
         Some(path),
-        &["remote", "get-url", "--push", "--all", "origin"],
+        &["remote", "get-url", "--push", "--all", &remote],
     )?;
     if urls.lines().count() != 1 || urls.is_empty() {
         return Err("Multiple or missing Push URLs; no refs were sent.".into());
     }
-    let fetch = git_in(Some(path), &["remote", "get-url", "origin"])?;
+    let fetch = git_in(Some(path), &["remote", "get-url", &remote])?;
     if !same_remote(&fetch, &urls) {
         return Err(
             "Fetch and Push URLs identify different repositories. Review Git settings explicitly."
@@ -251,6 +262,8 @@ pub fn push_plan(path: &Path) -> Result<PushPlan, String> {
         head,
     })
 }
+/// EN: Compares the approved plan against the latest Git state immediately before sending the exact refspec, without force.
+/// JA: Push直前に承認済み計画とGitの現状を再比較し、強制せず明示的なrefspecだけを送ります。
 pub fn execute_push(path: &Path, plan: &PushPlan) -> Result<String, String> {
     if &push_plan(path)? != plan {
         return Err(
@@ -269,6 +282,8 @@ pub fn execute_push(path: &Path, plan: &PushPlan) -> Result<String, String> {
     )
 }
 /// Fingerprint the exact all-files commit candidate, including untracked bytes.
+/// EN: Captures relevant staged and unstaged content so an approval cannot accidentally include newly changed files.
+/// JA: Stage済み・未Stageの内容を指紋として記録し、承認後の変更を誤って取り込まないようにします。
 pub fn commit_fingerprint(path: &Path) -> Result<u64, String> {
     preflight_commit(path)?;
     let mut h = std::collections::hash_map::DefaultHasher::new();

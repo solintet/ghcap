@@ -1,3 +1,6 @@
+//! EN: Localized text lookup for menu strings. Control flow must never depend on translated text, as languages and wording can change.
+//! JA: 画面に使う翻訳文字列を管理します。言語・文言が変わっても動作するよう表示文言で分岐しません。
+
 use rust_i18n::t;
 use std::env;
 

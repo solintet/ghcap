@@ -1,51 +1,95 @@
-# ghcap v0.0.29.0 — safety candidate
+# ghcap
 
-GitHub用のRust製TUIです。Git操作は `git`、GitHub操作は `gh`、署名鍵操作は `gpg` を利用します。この版は安全性改善の候補版です。両macOS実機での操作・配布確認を終えるまでは、正式なStableとは扱いません。
+**Git and GitHub workflows in your terminal / ターミナルからGit・GitHubを操作**
 
-## 実行環境
+## English
 
-- Git、GitHub CLI、GnuPGをPATHへ導入してください。
-- `gh auth status --json hosts` に対応し、セキュリティ更新が適用されたGitHub CLIが必要です。古いDebian標準パッケージでは、このJSON機能が不足する場合があります。
-- GitHubアカウントの認証は `gh auth login` で管理します。ghcapにトークンを直接設定しません。
-- Rustからビルドする場合はRust 1.89以上とCargo.lockが必要です。最低Rust版そのもののコンパイルは別途検証が必要です。
+ghcap is a Rust-based terminal application for managing common Git and GitHub workflows. Navigate repository and account menus using the keyboard, review changes before committing, and keep Git command diagnostics visible.
 
-## 既存機能
+### Features
 
-アカウントとリポジトリの管理、Clone、Git関連付け、Commit、Push、Commit & Push、Commitプリセット、任意の事前/事後シェル、GPG鍵管理、フォルダからのGitHub Release作成・資産追加を提供します。
+- Interactive TUI for repository, account, preset, signing and Release operations.
+- Commit review with change detection, deliberate Push destination validation and non-force Push.
+- Guided local repository setup and first Push (`ghcap setup`).
+- Dependency diagnostics (`ghcap doctor`).
+- CUI output for operations, including native CLI errors and separate ghcap explanations.
+- Support for multiple GitHub accounts through GitHub CLI.
 
-Commitは確認した対象を `git add -A` で全件stageします。未追跡・削除も含み、既存のstage範囲を広げます。一覧を必ず確認してください。競合、merge/rebase等の進行中操作、別のGit root、確認後の変更を検出した場合は停止します。stage後の停止・Commit失敗ではindexを自動的に戻しません。Gitで確認してください。
+### Platforms
 
-Pushは確認したSHAをoriginの単一upstreamブランチへ、forceなしで送信します。upstreamがない場合はGitで明示設定してください。mirror、matching、force/delete/wildcard refspec、複数送信先、異なるpushurlは通常経路で拒否します。通信の中断はリモートへの未反映を保証しません。再試行前にリモートを確認してください。
+The source is intended for Windows x64, Linux x86_64, macOS Intel and macOS Apple Silicon. Availability of a verified binary depends on completion of the release workflow and platform tests. Consult the Assets attached to each published Release.
 
-任意シェルとGit hookはユーザー権限のコードです。信頼できるリポジトリ・コマンドのみ使用してください。Skipはシェルを実行しません。ghcapはGitや外部コマンドを隔離するサンドボックスではありません。
+### Requirements
 
-## Releaseフォルダ
+- Git for local version-control operations.
+- A compatible GitHub CLI (`gh`) for GitHub features. ghcap checks for version 2.98.0 or newer and `gh auth status --json` support. A package-manager build may be too old.
+- GnuPG only when using GPG signing or GPG key management.
 
-`release-notes.md`、`RELEASE_NOTES.md`、`Release-Notes.md` のうち1個と、配布する通常ファイルを配置します。ファイル名の重複（ASCIIの大文字小文字を区別しない）、制御文字、`#`、外部ノートへのシンボリックリンクを拒否します。通常の資産シンボリックリンクは除外します。
+`ghcap doctor` reports compatibility without changing your system. **The application does not yet automatically download or update GitHub CLI**; use the [official installation instructions](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) where required.
 
-Unixではno-followで開いた内容を非公開の一時フォルダへコピーし、確認後はそのスナップショットを使用します。ノート1 MiB、資産1個512 MiB、合計1 GiB、資産10,000個までです。これらを超えた場合は明示エラーになります。Windowsのフォルダ公開は安全なno-follow実装が検証されるまで停止します。これは既存機能の制限です。
+### Build / Install
 
-Release先は選択した `owner/repo` を明示指定します。新規タグの対象は確認したローカルHEADのSHAです。既存タグとの不一致を拒否します。手動で用意したバイナリとソースの一致をghcapが自動認定するわけではありません。既存資産は上書きせず、途中失敗時は作成済みReleaseと資産を手動確認してください。
+From the source tree, run `./build-install.sh build` for a checked release build, `./build-install.sh test` for quality gates, or `./build-install.sh build-install` to build and install into your own `~/.local/bin` after confirmation. Use `--offline` to prevent Cargo network access. These commands never install OS packages automatically.
 
-## 設定と停止
-
-設定はOSのユーザー設定領域に保存します。解決不能時の作業ディレクトリへのfallbackはありません。不正JSON、未知schema、外部からの同時変更を検出した場合は保存を止めます。原子的置換・ファイルと親ディレクトリのfsyncを維持し、同一内容の保存は省略します。Unixの新規ファイルは0600、設定ディレクトリは0700です。旧tokenを含む設定の移行では非公開の原本バックアップを作成します。バックアップにも機密値があるためユーザーが管理してください。
-
-`ghcap commitstop`、`ghcap pushstop`、`ghcap commitpushstop` は起動中インスタンスへ停止を要求します。「要求受付」は「処理が巻き戻った」という意味ではありません。Unixでは処理専用のプロセスグループを停止し、実際の終了結果を表示します。通常捕捉コマンドは60秒、ライブ処理は15分で期限切れになります。大量出力も上限を超えると失敗として扱います。
-
-## ビルドと検査
+### Start
 
 ```sh
-cargo fmt --all -- --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --all-targets --locked
-cargo build --release --locked
+ghcap doctor
+ghcap setup   # Guided setup in the current working directory
+ghcap         # Interactive terminal menus
 ```
 
-GitHub ActionsはmacOS Intel・Apple Silicon、Windows x64、Linux x86_64のネイティブビルドとテストを行います。全ジョブが成功したmasterへのPushでは、同一Commitの成果物とSHA-256をGitHub Pre-releaseへ公開します。既存タグの移動・資産の上書き・Stableの変更は拒否します。同じ版で別Commitを公開する場合は `-pre.<Commitの先頭12桁>` 付きタグを使用し、過去の配布物を保持します。`.github/workflows/build-macos.yml` はmasterへのPush、PR、手動操作で実行します。各Macで `./packaging/build-macos.sh intel` または `./packaging/build-macos.sh apple-silicon` を実行します。生成済み同名アーカイブの上書きは拒否します。アーカイブにはソースCommit、ツールチェーン情報、Cargo.lockのSHA-256と第三者ライセンス資料を含めます。署名・公証はしていません。最低macOS版とGatekeeper/quarantineの実機検査は別途必要です。
+For GitHub actions, authenticate first with `gh auth login`. For initial public repository creation, review every file and commit before selecting Public. Existing remotes and Git history must be preserved.
 
-旧build-all.sh/build-linux.shはActionsから呼びません。新しいCI専用Python処理でWindows exe/zip、Linux tar.gz/deb/rpm/pacman/AppImageを生成します。Linuxはglibc 2.35以上が必要です。AppImageの公式ツールとruntimeは版とSHA-256を固定しています。
+See [Installation](docs/installation/overview.md), [First setup](docs/usage/repository-setup.md), [Commands](docs/reference/commands.md), [Troubleshooting](docs/troubleshooting/errors.md), [Security](SECURITY.md), [Contributing](CONTRIBUTING.md) and [Release process](docs/development/release-process.md).
 
-公開版表示は `0.0.29.0`、Cargoの3要素SemVerは `0.29.0` です。過去の `0.0.29.8` とは別のユーザー指定番号であり、過去のタグ・成果物を置き換えません。
+## 日本語
 
-BSD-2-Clause。依存ライセンスは `THIRD_PARTY_NOTICES.md` と `THIRD_PARTY_LICENSES/` を参照してください。未収集の本文があるため、正式再配布前の確認事項が残っています。
+ghcapはGit・GitHubの一般的な操作をターミナルで扱うRust製アプリケーションです。キーボードによるメニュー操作、Commit前の内容確認、Push先の検証、Gitコマンドの実行結果の確認ができます。
+
+### 主な機能
+
+- リポジトリ・GitHubアカウント・プリセット・署名・Release操作用のTUI。
+- Commit前の変更確認、Push先の事前検証、強制しないPush。
+- 初回セットアップと初回Pushの案内（`ghcap setup`）。
+- 依存関係の診断（`ghcap doctor`）。
+- CUIへのコマンド実行結果・Git本来のエラー・ghcapの診断の表示。
+- GitHub CLIを利用した複数アカウントの操作。
+
+### 対応環境
+
+ソースはWindows x64、Linux x86_64、macOS Intel、macOS Apple Silicon向けに設計されています。実際の配布ファイルが提供されるかどうかは、対象環境のビルド・検証結果によります。各ReleaseのAssetsを確認してください。
+
+### 依存関係
+
+- Git：ローカルのバージョン管理操作で使用。
+- GitHub CLI (`gh`)：GitHub機能で使用。ghcapは2.98.0以上と`gh auth status --json`対応を要求します。OS標準の`gh`が古い場合があります。
+- GnuPG：GPG署名・GPG鍵管理を使う場合に必要です。
+
+`ghcap doctor`でシステム設定を変えずに診断できます。**GitHub CLIを自動ダウンロード・更新する機能は未完成です。** 必要な場合は[公式導入方法](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)を参照してください。
+
+### ビルド・インストール
+
+ソースのルートから `./build-install.sh build` で品質検査付きビルド、`./build-install.sh test` で検査、`./build-install.sh build-install` で検査・ビルド後に確認して `~/.local/bin` へ導入できます。`--offline` で Cargo の通信を禁止できます。OS依存パッケージを無断導入しません。
+
+### 初回起動
+
+```sh
+ghcap doctor
+ghcap setup   # 現在のフォルダを初回設定
+ghcap         # 対話的なTUIメニューを開く
+```
+
+GitHub操作では先に`gh auth login`で認証します。Publicでリポジトリを作る場合、公開対象のファイルと履歴を必ず確認してください。既存remoteとGit履歴は保護する設計です。
+
+詳しくは[導入](docs/installation/overview.md)、[初回設定](docs/usage/repository-setup.md)、[コマンド](docs/reference/commands.md)、[エラー対応](docs/troubleshooting/errors.md)、[セキュリティ](SECURITY.md)、[開発参加](CONTRIBUTING.md)、[リリース手順](docs/development/release-process.md)を参照してください。
+
+## License / ライセンス
+
+BSD-2-Clause; see [LICENSE](LICENSE). Third-party notices and license texts are included separately. / BSD-2-Clause。詳細は[LICENSE](LICENSE)をご覧ください。第三者ライセンスは別途収録しています。
+
+## Maintainer / 開発・公開名義
+
+**solintet** maintains and publishes ghcap through the [solintet/ghcap](https://github.com/solintet/ghcap) repository. Existing third-party notices and contributor copyrights remain applicable.
+
+**ghcap の開発・公開名義は solintet** です。公開リポジトリは [solintet/ghcap](https://github.com/solintet/ghcap) です。既存の貢献者・第三者の著作権およびライセンス表示は引き続き適用されます。

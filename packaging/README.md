@@ -1,40 +1,21 @@
-# Release builds (Debian + macOS on demand)
+# Packaging / 配布物の生成
 
-`./packaging/build-linux.sh` creates Linux formats. `./packaging/build-all.sh` runs the Linux release build, adds a Windows x64 GNU `.exe` and portable ZIP, generates winget manifests, and writes SHA-256 checksums. Run both from Debian.
+## English
 
-## Debian build dependencies
+ghcap is published by **solintet**. Four native GitHub Actions jobs build Linux x86_64, Windows x64, macOS Intel and macOS Apple Silicon. `cargo fmt`, `cargo check`, `cargo clippy` and `cargo test` must all succeed before native packaging begins.
 
-```sh
-sudo apt update
-sudo apt install build-essential gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 dpkg-dev debhelper rpm zstd curl podman llvm zip unzip
-```
+Packaging is implemented using Bash, PowerShell, the operating system's native package tools, and GitHub CLI. **Python is not required.** Linux generates tar.gz, deb, RPM, Pacman and AppImage; Windows generates exe and ZIP; macOS generates tar.gz for each architecture. Release publication validates the exact source commit and every individual checksum before creating or uploading a GitHub Release.
 
-Install stable Rust and components: `rustup toolchain install stable && rustup default stable && rustup component add rustfmt clippy`. The Windows target is installed by the build script.
+`packaging/package-linux-ci.sh` packages an already-built native Linux binary; `packaging/package-windows-ci.ps1` packages an already-built native Windows binary. `packaging/build-macos.sh` builds the native macOS archive. `packaging/validate-release-assets.sh` and `tests/publisher-offline.sh` work without GitHub authentication. `packaging/publish-release.sh` publishes only after validation and requires GitHub Actions environment variables.
 
-Set `GITHUB_REPOSITORY=OWNER/REPO` to the actual GitHub repository before running `./packaging/build-all.sh`. Optionally set `WINGET_PACKAGE_ID` to the actual package identifier.
+Developer-specific legacy packaging paths remain available; use the native Actions pipeline for official binaries. Distribution publishing requires deliberate GitHub authorization. Packages must not be described as tested solely because the scripts exist.
 
-```sh
-export GITHUB_REPOSITORY=solintet/ghcap
-./packaging/build-all.sh
-```
+## 日本語
 
-The script needs network access for Cargo dependency resolution, AppImage tool retrieval when absent, and the Arch Linux container. Podman or Docker is required for Arch package generation.
+ghcap の開発・公開元は **solintet** です。GitHub Actions は Linux x86_64、Windows x64、macOS Intel、macOS Apple Silicon の4環境でビルドします。パッケージ化の前に Rust の整形・静的解析・Clippy・テストをすべて成功させます。
 
-## macOS (manual GitHub Actions workflow)
+配布処理には Bash、PowerShell、各OSの標準パッケージツール、GitHub CLI を使用します。**Python は不要です。** Linux は tar.gz・deb・RPM・Pacman・AppImage、Windows は exe・ZIP、macOS はアーキテクチャ別 tar.gz を生成します。GitHub へ公開する前に、各成果物のチェックサムとビルド元コミットを照合します。
 
-macOS builds are integrated into this same source tree but are **not** part of the default push/PR CI or Debian build. In GitHub, open **Actions → Build macOS → Run workflow** and select `intel`, `apple-silicon`, or `both`. Each architecture is built on a matching GitHub-hosted macOS runner and uploaded as a separate artifact; no Universal Binary is created.
+`packaging/package-linux-ci.sh` と `packaging/package-windows-ci.ps1` は検証済みのネイティブバイナリを梱包します。macOS は `packaging/build-macos.sh` を使用します。`packaging/validate-release-assets.sh` と `tests/publisher-offline.sh` は GitHub 認証なしで実行できます。`packaging/publish-release.sh` は検証済み成果物と GitHub Actions の環境変数が必要です。
 
-- Intel: `ghcap-v0.0.29.0-macos-intel.tar.gz`
-- Apple Silicon: `ghcap-v0.0.29.0-macos-apple-silicon.tar.gz`
-
-The local helper `./packaging/build-macos.sh intel` or `./packaging/build-macos.sh apple-silicon` must be run on the matching Mac architecture. `./packaging/setup-macos.sh` checks/installs the local Rust prerequisites. GitHub Actions uses the same build helper and requires no macOS SDK on Debian.
-
-Archives are unsigned and not notarized; Gatekeeper may warn users. Runtime requirements are Git, GitHub CLI (`gh`), and GnuPG (`gpg`).
-
-## Verification boundary
-
-Shell syntax and archive integrity can be checked on Debian, but macOS execution must be tested on macOS. A CI build alone does not imply the binary was manually end-to-end tested against GitHub.
-
-## Arch package build in a Debian container
-
-The Arch container installs `base-devel`, `git`, `github-cli`, and `gnupg` as root before invoking `makepkg` as an unprivileged user. It deliberately does not use `makepkg --syncdeps`: dependencies are installed in the container beforehand, avoiding an interactive `sudo` password prompt in a non-interactive build.
+従来の開発者向け配布経路は引き続き利用できますが、公式バイナリにはネイティブ Actions の検査経路を使用します。公開には明示的な GitHub 認可が必要です。スクリプトがあるだけで検証済みとは扱いません。

@@ -3,8 +3,8 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
-RELEASE_VERSION="0.0.29.0"
-CARGO_VERSION="0.29.0"
+RELEASE_VERSION="0.0.31.0"
+CARGO_VERSION="0.31.0"
 DIST="$ROOT/dist"
 
 need() {
@@ -43,13 +43,14 @@ mkdir -p "$DIST"
 # Windows x64 standalone executable. GNU/MinGW target is intentionally used so
 # the cross-linker can run on Debian; Windows-native end-to-end tests remain needed.
 need x86_64-w64-mingw32-gcc
-rustup target add x86_64-pc-windows-gnu
+rustup target list --installed | grep -qx x86_64-pc-windows-gnu || { echo "ERROR: Install the Windows Rust target before running this script / Rustターゲットを事前に導入してください" >&2; exit 1; }
 WINDOWS_BIN="$ROOT/target/x86_64-pc-windows-gnu/release/ghcap.exe"
 RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static" \
 CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
     cargo build --release --locked --target x86_64-pc-windows-gnu
 [ -s "$WINDOWS_BIN" ] || { echo "ERROR: Windows executable was not created." >&2; exit 1; }
-cp -f "$WINDOWS_BIN" "$DIST/ghcap-v$RELEASE_VERSION-windows-x64.exe"
+[ ! -e "$DIST/ghcap-v$RELEASE_VERSION-windows-x64.exe" ] || { echo "ERROR: Refusing overwrite / 上書きを拒否" >&2; exit 1; }
+cp "$WINDOWS_BIN" "$DIST/ghcap-v$RELEASE_VERSION-windows-x64.exe"
 
 WIN_STAGE="$ROOT/.packaging/windows"
 rm -rf "$WIN_STAGE"

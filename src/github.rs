@@ -1,3 +1,6 @@
+//! EN: GitHub CLI adapter. GitHub JSON and authentication status must be validated; token material must not be included in diagnostics.
+//! JA: GitHub CLIアダプター。JSON・認証状態を検証し、トークンを診断出力に含めないようにします。
+
 use crate::{
     models::{Account, Repo},
     process,
@@ -77,8 +80,8 @@ pub fn switch_account(login: &str) -> Result<(), String> {
     }
 }
 
-pub fn login_command() -> Command {
-    let mut command = Command::new("gh");
+pub fn login_command() -> Result<Command, String> {
+    let mut command = Command::new(crate::dependencies::resolver::resolve_gh()?);
     command.args([
         "auth",
         "login",
@@ -88,7 +91,7 @@ pub fn login_command() -> Command {
         "--git-protocol",
         "https",
     ]);
-    command
+    Ok(command)
 }
 
 pub fn clone(repo: &Repo, destination: &str) -> Result<String, String> {

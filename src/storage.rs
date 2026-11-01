@@ -1,3 +1,6 @@
+//! EN: Reads and writes configuration with version compatibility, atomic replacement, and conflict protection. A broken file must never be overwritten by a default config.
+//! JA: 設定を互換性・原子的置き換え・競合保護付きで読み書きします。壊れた設定を既定値で上書きしてはいけません。
+
 use crate::models::{Config, RepoConfig};
 use etcetera::{choose_base_strategy, BaseStrategy};
 use serde::{de::DeserializeOwned, Serialize};

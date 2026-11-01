@@ -4,8 +4,8 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-RELEASE_VERSION="0.0.29.0"
-CARGO_VERSION="0.29.0"
+RELEASE_VERSION="0.0.31.0"
+CARGO_VERSION="0.31.0"
 DIST="$ROOT/dist"
 ARCH_RAW="$(dpkg --print-architecture 2>/dev/null || uname -m)"
 case "$ARCH_RAW" in
@@ -31,27 +31,24 @@ cargo clippy --version >/dev/null 2>&1 || {
     exit 1
 }
 
-# AppImage packaging requires appimagetool. Download a pinned project release tool
-# only when the user has not provided one; APPIMAGETOOL can point to a local copy.
-if [ -n "${APPIMAGETOOL:-}" ]; then
-    APPIMAGE_TOOL="$APPIMAGETOOL"
-elif command -v appimagetool >/dev/null 2>&1; then
-    APPIMAGE_TOOL="$(command -v appimagetool)"
-else
-    case "$ARCH" in
-        x86_64) APPIMAGE_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" ;;
-        aarch64) APPIMAGE_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage" ;;
-        *) echo "ERROR: AppImage tool auto-download is not configured for $ARCH. Set APPIMAGETOOL to a compatible appimagetool." >&2; exit 1 ;;
-    esac
-    mkdir -p "$ROOT/.tools"
-    APPIMAGE_TOOL="$ROOT/.tools/appimagetool-$ARCH.AppImage"
-    if [ ! -x "$APPIMAGE_TOOL" ]; then
-        echo "Downloading appimagetool for $ARCH..."
-        curl --fail --location --retry 3 --retry-delay 2 "$APPIMAGE_URL" -o "$APPIMAGE_TOOL"
-        chmod 0755 "$APPIMAGE_TOOL"
-    fi
+# EN: Never download or execute an unverified external packager during local builds.
+# JA: ローカルビルド時に未検証の外部パッケージツールを取得・実行しません。
+APPIMAGE_TOOL="${APPIMAGETOOL:-}"
+if [ -z "$APPIMAGE_TOOL" ]; then
+    APPIMAGE_TOOL=$(command -v appimagetool 2>/dev/null || true)
 fi
-[ -x "$APPIMAGE_TOOL" ] || { echo "ERROR: appimagetool is not executable: $APPIMAGE_TOOL" >&2; exit 1; }
+[ -n "$APPIMAGE_TOOL" ] && [ -x "$APPIMAGE_TOOL" ] || {
+    echo "ERROR: Set APPIMAGETOOL to an approved local appimagetool." >&2; exit 1;
+}
+if [ "$ARCH" = x86_64 ]; then
+    EXPECTED_APPIMAGE_HASH="${APPIMAGETOOL_SHA256:-ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0}"
+else
+    EXPECTED_APPIMAGE_HASH="${APPIMAGETOOL_SHA256:-}"
+fi
+[ -n "$EXPECTED_APPIMAGE_HASH" ] || { echo "ERROR: Set APPIMAGETOOL_SHA256 for this architecture." >&2; exit 1; }
+printf '%s  %s\n' "$EXPECTED_APPIMAGE_HASH" "$APPIMAGE_TOOL" | sha256sum -c --status || {
+    echo 'ERROR: AppImage tool hash mismatch / 外部ツールのチェックサム不一致' >&2; exit 1;
+}
 
 # Build Arch package on Debian using an Arch Linux container. Docker or Podman is required.
 CONTAINER_ENGINE=""
@@ -77,16 +74,14 @@ grep -q "^ghcap ($RELEASE_VERSION-1)" debian/changelog || {
 }
 
 mkdir -p "$DIST"
-rm -f "$DIST"/ghcap-"$RELEASE_VERSION"-linux-"$ARCH".tar.gz \
-      "$DIST"/ghcap-"$RELEASE_VERSION"-linux-"$ARCH".tar.gz.sha256 \
-      "$DIST"/ghcap-"$RELEASE_VERSION"-linux-"$ARCH".AppImage \
-      "$DIST"/ghcap-"$RELEASE_VERSION"-1."$RPM_ARCH".rpm \
-      "$DIST"/ghcap-"$RELEASE_VERSION"-1-"$ARCH_PKG".pkg.tar.zst \
-      "$DIST"/ghcap_"$RELEASE_VERSION"-1_"$DEB_ARCH".deb
+# EN: Never delete or overwrite a previous distribution artifact automatically.
+# JA: 既存の配布ファイルを自動削除・上書きしません。
+for candidate in "ghcap-$RELEASE_VERSION-linux-$ARCH.tar.gz" "ghcap-$RELEASE_VERSION-linux-$ARCH.AppImage" "ghcap-$RELEASE_VERSION-1.$RPM_ARCH.rpm" "ghcap-$RELEASE_VERSION-1-$ARCH_PKG.pkg.tar.zst" "ghcap_$RELEASE_VERSION-1_$DEB_ARCH.deb"; do
+    [ ! -e "$DIST/$candidate" ] || { echo "ERROR: Refusing to overwrite $candidate" >&2; exit 1; }
+done
 
 # Shared strict release gate. Formatting is applied first because prior source archives
 # may contain rustfmt-only differences; the subsequent check ensures the tree is clean.
-cargo fmt --all
 cargo fmt --all -- --check
 cargo check --locked --all-targets --all-features
 cargo test --locked --all-targets --all-features
@@ -150,7 +145,7 @@ EOF
 rpmbuild --define "_topdir $RPMROOT" -bb "$RPMROOT/SPECS/ghcap.spec"
 RPM_SOURCE="$RPMROOT/RPMS/$RPM_ARCH/ghcap-$RELEASE_VERSION-1.$RPM_ARCH.rpm"
 [ -f "$RPM_SOURCE" ] || { echo "ERROR: RPM package not found: $RPM_SOURCE" >&2; exit 1; }
-cp -f "$RPM_SOURCE" "$DIST/"
+cp "$RPM_SOURCE" "$DIST/"
 rpm -qpi "$DIST/$(basename "$RPM_SOURCE")" >/dev/null
 
 # 4) AppImage. It is a CLI AppImage; system dependencies git/gh/gpg remain external.
@@ -226,7 +221,7 @@ else
 fi
 ARCH_PACKAGE="$(find "$ARCH_STAGE" -maxdepth 1 -type f -name 'ghcap-*.pkg.tar.zst' -print -quit)"
 [ -n "$ARCH_PACKAGE" ] && [ -f "$ARCH_PACKAGE" ] || { echo "ERROR: Arch package was not created." >&2; exit 1; }
-cp -f "$ARCH_PACKAGE" "$DIST/"
+cp "$ARCH_PACKAGE" "$DIST/"
 zstd -t "$DIST/$(basename "$ARCH_PACKAGE")"
 
 # Checksums for all final deliverables.

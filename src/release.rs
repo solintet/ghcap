@@ -1,3 +1,6 @@
+//! EN: GitHub Release operations use explicit repository identity, approval and immutable asset snapshots. Never silently clobber an existing public release.
+//! JA: GitHub Release処理では対象の明示・承認・配布物スナップショットを利用します。既存の公開版を無断上書きしません。
+
 use std::{
     collections::HashSet,
     fs::{self, File},

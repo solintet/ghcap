@@ -1,0 +1,138 @@
+# EN: Build on four native runners; publish only after every verification succeeds.
+# JA: 4種類のネイティブ環境で検証し、全件成功後だけ自動公開します。
+name: Build, verify and release ghcap
+
+on:
+  push:
+    branches: [master]
+    tags: ['v0.0.31.0']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      publish_preview:
+        description: 'Publish verified master build as a preview / 検証後に開発版を公開'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcap-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            os: ubuntu-22.04
+            kind: linux
+          - platform: windows-x64
+            os: windows-2022
+            kind: windows
+          - platform: macos-intel
+            os: macos-15-intel
+            kind: macos
+            architecture: intel
+          - platform: macos-apple-silicon
+            os: macos-15
+            kind: macos
+            architecture: apple-silicon
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Normalize Git checkout settings / Gitの設定
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: 'rustfmt, clippy'
+      # EN: Lockfile prevents unreviewed transitive dependency resolution.
+      # JA: lockfileにより未検証の間接依存更新を防ぎます。
+      # EN: Reject accidental reintroduction of Python tooling.
+      # JA: Python製のビルド・公開スクリプトが再混入した場合は失敗させます。
+      - name: Check packaging policy / 配布ツールの言語規約
+        if: matrix.kind == 'linux'
+        run: |
+          test -z "$(find packaging -type f -name '*.py' -print -quit)"
+          bash -n build-install.sh packaging/*.sh tests/*.sh
+          bash tests/publisher-offline.sh
+          bash tests/publisher-state.sh
+      - name: Rust quality gates / Rust品質検査
+        run: |
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+      - name: Build Windows or Linux / Windows・Linuxビルド
+        if: matrix.kind != 'macos'
+        run: cargo build --locked --release
+      - name: Linux packaging requirements / Linux配布依存
+        if: matrix.kind == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm zstd libarchive-tools desktop-file-utils aria2 zip unzip jq
+      - name: Package Linux and test binaries / Linux検証
+        if: matrix.kind == 'linux'
+        run: bash packaging/package-linux-ci.sh
+      - name: Check Arch package with pacman / pacman検査
+        if: matrix.kind == 'linux'
+        run: docker run --rm -v "$PWD/dist:/packages:ro" archlinux:base bash -c 'pacman -Qp /packages/*.pkg.tar.zst'
+      - name: Package Windows and test binaries / Windows検証
+        if: matrix.kind == 'windows'
+        run: pwsh -NoProfile -File packaging/package-windows-ci.ps1
+      - name: Build and package macOS / macOSビルド
+        if: matrix.kind == 'macos'
+        run: ./packaging/build-macos.sh '${{ matrix.architecture }}'
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ghcap-${{ matrix.platform }}
+          path: |
+            dist/*
+            !dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish verified release / 検証済み版を公開
+    needs: build
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/tags/v0.0.31.0') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' && inputs.publish_preview)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: ghcap-*
+          path: release-assets
+          merge-multiple: true
+      - name: Check publication safety offline / 公開安全性の単体テスト
+        run: |
+          bash tests/publisher-offline.sh
+          bash tests/publisher-state.sh
+      - name: Check stable release tag / 正式版タグの検証
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          test "$(git describe --tags --exact-match HEAD)" = 'v0.0.31.0'
+          test "$(grep '^version = ' Cargo.toml | head -1)" = 'version = "0.31.0"'
+      - name: Publish preview or stable / 開発版・正式版を公開
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GHCAP_RELEASE_MODE: ${{ startsWith(github.ref, 'refs/tags/') && 'stable' || 'preview' }}
+        run: bash packaging/publish-release.sh

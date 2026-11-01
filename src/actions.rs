@@ -1,3 +1,6 @@
+//! EN: Controls Commit, Push, and user-defined shell execution. Every approved operation is revalidated before it mutates Git state; unexpected errors are not interpreted as success.
+//! JA: Commit・Push・明示登録されたシェル処理を管理します。承認後の状態を再検証し、未知のエラーを成功と誤認しません。
+
 use crate::{
     git,
     models::{Config, Repo},

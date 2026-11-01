@@ -1,14 +1,13 @@
-# Architecture — v0.0.29.0 candidate
+# Architecture / アーキテクチャ
 
-- main: 起動前検査、インスタンス所有権、端末復元guard。
-- app/ui: 既存メニューと確認、描画・入力。副作用の多いappの分割は未完了。
-- actions: Commit結果の型、確認fingerprint、明示ShellPolicy、Push計画の照合。
-- git: root・操作状態・実効Push設定検査。statusはporcelain v2を1回取得。
-- process: 標準プロセスAPI、出力上限、期限、制御文字対策、Unix専用プロセスグループと停止。
-- storage: schema、サイズ上限、排他・同時更新検出、atomic replaceとfsync、インスタンス単位の停止要求。
-- release: 明示repo/SHA、タグ検査、Unix no-follow、私有スナップショット、引数上限に応じた分割upload。
-- github/gpg/dependencies: CLI JSON・能力・終了コード・署名鍵属性の検査。
+## English
 
-外部コマンドの実行にshell解釈を使うのは、ユーザーが設定し許可したシェル操作だけです。信頼したGit hooks・外部ツールの任意コード実行は隔離しません。設定保存とGit操作全体を単一トランザクションにはできないため、部分完了は表示し、巻戻しやforce pushを自動実行しません。
+UI responsibilities are split into independent `src/app/*.rs` Rust modules (`mod`, not textual `include!`). `src/repository/` inspects HEAD and tracking state and plans first Push. `src/workflows/setup.rs` provides the opt-in CUI setup wizard. `src/process/` retains bounded output, timeout, signal handling, and safe diagnostics from the strict source branch. `src/storage.rs`, `src/git.rs` and `src/release.rs` preserve historically important guards; further division of those files into smaller modules is planned and should not remove guards. `src/dependencies/` diagnoses compatible system or managed GitHub CLI binaries, but does not currently perform automatic installation.
 
-UIスレッド上の同期処理、Windows固有の停止/ACL/初回描画、実MacのIME・最小OS・公証は追加検証が必要です。
+The highest-risk boundaries are remote destination selection, commit staging, local configuration persistence, subprocess output and Release file snapshots. Regression tests should cover each boundary.
+
+## 日本語
+
+UIは独立したRustモジュール`src/app/*.rs`に分割しています（単純な`include!`連結は使用しません）。`src/repository/`がHEAD・追跡状態を調査して初回Pushを判断し、`src/workflows/setup.rs`が承認式のCUIセットアップを提供します。`src/process/`には厳格版の出力制限・タイムアウト・シグナル処理・安全な診断を維持しています。`src/storage.rs`、`src/git.rs`、`src/release.rs`は過去の重要な検証を保持しており、今後の詳細モジュール分割でも保護を削除しません。`src/dependencies/`はシステム版・専用版ghの互換性を診断しますが、自動インストールは未実装です。
+
+安全性上、特に重要なのはPush先の決定、CommitのStage、設定保存、外部出力、Releaseファイルのスナップショットです。それぞれに回帰テストを設けるべきです。

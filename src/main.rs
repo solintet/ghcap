@@ -10,8 +10,10 @@ mod i18n;
 mod models;
 mod process;
 mod release;
+mod repository;
 mod storage;
 mod ui;
+mod workflows;
 
 use clap::{Parser, Subcommand};
 use crossterm::{
@@ -24,7 +26,7 @@ use std::io;
 #[derive(Parser)]
 #[command(
     name = "ghcap",
-    version = "0.0.29.0",
+    version = "v0.0.31.0",
     about = "Cross-platform GitHub commit/push workflow TUI"
 )]
 struct Cli {
@@ -40,6 +42,10 @@ enum CliCommand {
     Pushstop,
     /// Ask the running ghcap instance to stop Commit & Push.
     Commitpushstop,
+    /// EN: Inspect dependencies without entering TUI. JA: TUIなしで依存関係を診断。
+    Doctor,
+    /// EN: Guided initial repository setup. JA: リポジトリ初回設定。
+    Setup,
 }
 
 fn main() {
@@ -52,10 +58,19 @@ fn main() {
 fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     if let Some(command) = cli.command {
+        match command {
+            CliCommand::Doctor => {
+                dependencies::doctor();
+                return Ok(());
+            }
+            CliCommand::Setup => return workflows::setup::run_cui().map_err(anyhow::Error::msg),
+            _ => {}
+        }
         let name = match command {
             CliCommand::Commitstop => "commitstop",
             CliCommand::Pushstop => "pushstop",
             CliCommand::Commitpushstop => "commitpushstop",
+            CliCommand::Doctor | CliCommand::Setup => unreachable!(),
         };
         std::process::exit(storage::send_stop(name));
     }

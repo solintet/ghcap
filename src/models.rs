@@ -1,3 +1,6 @@
+//! EN: Serializable domain types and backward-compatible configuration. Legacy account tokens may be read for migration but are not serialized into new configuration.
+//! JA: シリアライズ可能なデータ型と旧設定との互換性を管理します。旧トークンは移行用に読めても新設定へ再保存しません。
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Default)]

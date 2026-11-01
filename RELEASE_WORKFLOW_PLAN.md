@@ -1,12 +1,9 @@
-# GitHub Release folder workflow (implemented in v0.26.0; Enter-to-continue confirmation and wait messages added in v0.0.29.0)
+# Release workflow / リリースの流れ
 
-Select **GitHub Release (folder upload)** from a repository menu and enter a staging directory. Relative paths are created under the configured local repository folder; the default is `release-staging`. ghcap creates the folder if it does not exist. Put a non-empty `release-notes.md` at its root, then put all release files in the folder.
+## English
 
-All other regular files beneath the directory are uploaded recursively as assets. Symlinks and `.git`, `.svn`, and `__MACOSX` contents are skipped. Duplicate asset basenames are rejected because GitHub Release asset names must be unique. The staging directory is inside the working repository by default and may appear as untracked content in Git; it is not itself uploaded as an archive.
+CI builds on four native runners; PR builds never publish. Pushes to `master` publish an automatically versioned Pre-release only after all platform tests and asset verification succeed. The exact tag `v0.0.31.0` triggers Stable publication after the same gate. Publication is performed as Draft upload → integrity check → publish; neither existing tags nor published Assets are overwritten.
 
-Before running `gh`, ghcap displays the repository, tag, title, release type, notes path, and complete asset list. Press Enter to continue; Ctrl-D cancels. Long-running GitHub checks and uploads display `Running... Please wait.` every second. The workflow uses the installed official GitHub CLI (`gh release create` / `gh release upload`), not a custom GitHub API implementation.
+## 日本語
 
-- New release: creates a Release, Pre-release, or Draft with `--notes-file`.
-- Existing release: asks before uploading assets. It does not alter title/notes/type and never uses `--clobber`; duplicate remote asset names fail safely.
-- Tag and title are entered interactively. A new tag targets the repository's default branch unless the installed `gh` CLI's normal defaults say otherwise.
-- Build/export is not automated in this version: place built files in the staging folder before creating the release.
+CIは4つのネイティブRunnerで実行します。PRからの公開は行いません。`master`へのPushは全プラットフォームの検査と配布物検証に成功した場合だけ開発版Pre-releaseを公開します。正確なタグ`v0.0.31.0`で同じ検査後にStableを公開します。Draftへアップロード→整合性検証→公開の順で行い、既存タグや公開済みAssetsは上書きしません。

@@ -3,8 +3,8 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
-RELEASE_VERSION="0.0.29.0"
-CARGO_VERSION="0.29.0"
+RELEASE_VERSION="0.0.31.0"
+CARGO_VERSION="0.31.0"
 DIST="$ROOT/dist"
 
 usage() {
@@ -48,7 +48,7 @@ if [ ! -f Cargo.lock ]; then
   echo "ERROR: A reviewed Cargo.lock is required." >&2
   exit 1
 fi
-rustup target add "$TARGET"
+rustup target list --installed | grep -qx "$TARGET" || { echo "ERROR: Install the Rust target before packaging / ターゲットを事前導入してください" >&2; exit 1; }
 mkdir -p "$DIST"
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features --locked -- -D warnings
@@ -64,7 +64,7 @@ install -m 0755 "$BINARY" "$STAGE/ghcap"
 cp README.md LICENSE DEPENDENCIES.md THIRD_PARTY_NOTICES.md "$STAGE/"
 cp -R THIRD_PARTY_LICENSES "$STAGE/"
 file "$BINARY" | grep -q "$EXPECTED_MACHO" || { echo "ERROR: Binary architecture mismatch." >&2; exit 1; }
-"$BINARY" --version | grep -qx "ghcap $RELEASE_VERSION"
+"$BINARY" --version | grep -qx "ghcap v$RELEASE_VERSION"
 git rev-parse HEAD > "$STAGE/SOURCE_COMMIT.txt"
 git diff --quiet HEAD -- || { echo "ERROR: Dirty source cannot be packaged." >&2; exit 1; }
 { rustc -Vv; cargo -V; shasum -a 256 Cargo.lock; } > "$STAGE/BUILD_INFO.txt"
@@ -82,7 +82,7 @@ tar -C "$STAGE" -czf "$ARCHIVE" ghcap README.md LICENSE DEPENDENCIES.md INSTALL.
 (cd "$DIST" && cat ./*.tar.gz.sha256 > SHA256SUMS)
 mkdir "$STAGE/verify"
 tar -C "$STAGE/verify" -xzf "$ARCHIVE"
-"$STAGE/verify/ghcap" --version | grep -qx "ghcap $RELEASE_VERSION"
+"$STAGE/verify/ghcap" --version | grep -qx "ghcap v$RELEASE_VERSION"
 "$STAGE/verify/ghcap" --help >/dev/null
 (cd "$DIST" && shasum -a 256 -c "$(basename "$ARCHIVE").sha256")
 echo "macOS $ARCHIVE_ARCH archive: $ARCHIVE"

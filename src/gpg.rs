@@ -1,3 +1,6 @@
+//! EN: Signing and GPG-key operations are separate from ordinary local Git workflows. External agent and pinentry settings remain under the user’s control.
+//! JA: 署名・GPG鍵管理を通常のGit操作から分けます。エージェントやPinentry設定は利用者の管理下に置きます。
+
 use crate::{github, process};
 
 pub fn list_secret() -> Result<String, String> {

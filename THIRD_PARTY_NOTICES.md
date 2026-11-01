@@ -1,3 +1,9 @@
+# Third-party notices / 第三者ソフトウェアのライセンス表示
+
+English: This notice lists third-party software used by ghcap. Redistribution must preserve each component's license terms; the ghcap project's license does not replace third-party terms.
+
+日本語：ghcapで使用する第三者ソフトウェアと、そのライセンスを示します。再配布時は各ソフトウェアのライセンス条件を守る必要があります。ghcap本体のライセンスで第三者の条件が置き換わるわけではありません。
+
 # Third-party dependency inventory
 
 Cargo.lockに対応する依存クレート全体（対象外OS・ビルド時依存を含む）のライセンス宣言と、取得できた配布元のLICENSE/COPYING/NOTICE本文です。ライセンスの最終的な法的適合性の認定ではありません。

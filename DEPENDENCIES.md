@@ -1,11 +1,9 @@
-# Dependencies — v0.0.29.0
+# Dependencies / 依存関係
 
-Git、認証JSON機能に対応するGitHub CLI、GnuPGが必要です。起動前に終了コードを含むversion検査とghの能力検査を行い、不足時は端末をraw modeへ変更する前に停止します。インストール・OS自体の更新は自動で行いません。
+## English
 
-macOSではHomebrew等で `git gh gnupg` を導入し、`gh auth login` で認証してください。GitHub CLIの更新時は公式のセキュリティ告知とOS側の更新情報を確認してください。能力検査はすべてのセキュリティ修正の保証ではありません。
+The `ghcap doctor` command examines Git, GitHub CLI and optional GnuPG. For GitHub actions, the CLI must provide `gh auth status --json`; this integration requires gh 2.98.0+ or verified equivalent fixes. The Debian system package may be older; follow GitHub CLI's official package installation instructions. `GHCAP_GH_PATH` is an optional override for a separately installed compatible `gh`. ghcap does not download or modify packages automatically in this source revision.
 
-Rust依存はCargo.tomlに固定し、Cargo.lockを同梱します。anyhowは1.0.104、Ratatuiは0.30.2、解決済みlruは0.18.5です。旧版の対象依存を更新しました。すべての脆弱性が存在しないことの証明ではありません。Cargo.lockの変更時にはテストとアドバイザリ再検査を行ってください。
+## 日本語
 
-外部プロセスはstd::process、プロセスグループ・no-followファイル操作にはUnix上でnix、終了通知にsignal-hookを使用します。UIはRatatui/Crossterm、入力はRustyline、保存はSerdeとtempfileです。設定fsyncを維持し、不要な保存を省略します。
-
-第三者ライセンスの宣言一覧と収集した本文はTHIRD_PARTY_NOTICES.mdおよびTHIRD_PARTY_LICENSES/にあります。対象外OS・ビルド依存も含む保守的な一覧で、未収集項目は一覧末尾に明記しています。正式再配布前に未収集本文の確認が必要です。
+`ghcap doctor`はGit、GitHub CLI、任意のGnuPGを診断します。GitHub機能には`gh auth status --json`対応が必要で、この統合版ではgh 2.98.0以降または同等の修正版を要求します。Debian標準パッケージが古い場合は公式GitHub CLIパッケージの導入手順を利用してください。`GHCAP_GH_PATH`で互換版`gh`を別途指定できます。このソース版はパッケージの自動ダウンロードやシステムの変更を行いません。

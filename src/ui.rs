@@ -1,3 +1,6 @@
+//! EN: Keyboard-oriented TUI with explicit enter/leave functions for CUI output. Terminal restoration is required after failures or cancelled operations.
+//! JA: キーボード主体のTUIとCUI切替を管理します。失敗・中断後のターミナル復元を保証するよう努めます。
+
 use crate::i18n::text;
 use crossterm::{
     cursor::{Hide, Show},
@@ -51,7 +54,7 @@ pub fn draw_menu(
         let area = frame.area();
         let outer = Block::default()
             .title(format!(
-                " ghcap 0.0.29.0 · {} ",
+                " ghcap v0.0.31.0 · {} ",
                 crate::process::safe_text(title)
             ))
             .borders(Borders::ALL);
@@ -275,7 +278,7 @@ pub fn edit_commit_message(
     let mut current = initial.to_string();
     loop {
         leave_tui()?;
-        println!("\nghcap 0.0.29.0 - Commit Message\n=== コミットメッセージ ===\n");
+        println!("\nghcap v0.0.31.0 - Commit Message\n=== コミットメッセージ ===\n");
         println!("プリセット内容は入力欄に事前入力されています。\\n は改行として扱われます。空欄のままEnterを押すと初期値を維持します。\n:back と入力するとプリセット選択へ戻ります。\n");
         let edited_result = readline_initial("> ", &current);
         let edited = match edited_result {

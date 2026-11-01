@@ -55,7 +55,7 @@ ghcap (0.0.29.1-1) unstable; urgency=medium
 
  -- ghcap contributors <noreply@example.com>  Thu, 15 Oct 2026 18:00:00 +0900
 
-ghcap (0.0.29.0-1) unstable; urgency=medium
+ghcap (0.0.31.0-1) unstable; urgency=medium
 
   * Check required Git, GitHub CLI, and GnuPG commands before starting the TUI.
   * Show localized, OS-specific installation guidance when dependencies are missing.

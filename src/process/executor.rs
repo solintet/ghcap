@@ -1,10 +1,13 @@
+//! EN: Spawn external programs, manage bounded output, cancellation and timeouts.
+//! JA: 外部実行・出力上限・キャンセル・タイムアウトの責任を持ちます。
+use super::{safe_text, shutting_down, Output, Termination};
 use std::{
     io::{Read, Write},
     path::Path,
     process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, OnceLock,
+        mpsc, Arc,
     },
     thread,
     time::{Duration, Instant},
@@ -12,84 +15,11 @@ use std::{
 
 const CAPTURE_LIMIT: usize = 8 * 1024 * 1024;
 const TAIL_LIMIT: usize = 256 * 1024;
-static SHUTDOWN: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
-pub fn init_signals() -> std::io::Result<()> {
-    let flag = SHUTDOWN
-        .get_or_init(|| Arc::new(AtomicBool::new(false)))
-        .clone();
-    for signal in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
-        signal_hook::flag::register(signal, flag.clone())?;
-    }
-    Ok(())
-}
-pub fn shutting_down() -> bool {
-    SHUTDOWN.get().is_some_and(|f| f.load(Ordering::SeqCst))
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Termination {
-    Exited(i32),
-    Signal,
-    Cancelled,
-    TimedOut,
-    OutputLimit,
-    ReadFailed,
-}
-#[derive(Debug)]
-pub struct Output {
-    pub success: bool,
-    pub code: i32,
-    pub stdout: String,
-    pub stderr: String,
-    pub termination: Termination,
-}
-
-/// Visible escapes, never executable terminal control sequences. Redact common
-/// credential formats and URL userinfo before displaying external diagnostics.
-pub fn safe_text(text: &str) -> String {
-    let mut s = String::with_capacity(text.len());
-    for c in text.chars() {
-        if (c == '\n' || c == '\t' || !c.is_control())
-            && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}')
-        {
-            s.push(c);
-        } else {
-            s.push_str(&format!("\\u{{{:x}}}", c as u32));
-        }
-    }
-    for prefix in ["github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_"] {
-        let mut from = 0;
-        while let Some(i) = s[from..].find(prefix) {
-            let start = from + i;
-            let end = s[start..]
-                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                .map_or(s.len(), |n| start + n);
-            s.replace_range(start..end, "[REDACTED]");
-            from = start + 10;
-        }
-    }
-    let mut from = 0;
-    while let Some(i) = s[from..].find("://") {
-        let start = from + i + 3;
-        let end = s[start..]
-            .find(['/', '\n', ' ', '\t'])
-            .map_or(s.len(), |n| start + n);
-        if let Some(at) = s[start..end].rfind('@') {
-            s.replace_range(start..start + at, "[REDACTED]");
-            from = start + 11;
-        } else {
-            from = end;
-        }
-        if from >= s.len() {
-            break;
-        }
-    }
-    s
-}
-
+/// EN: Run a bounded non-interactive command and report the true exit reason.
+/// JA: 対話入力しないコマンドを上限制御付きで実行し、実際の終了理由を返します。
 pub fn capture(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output, String> {
-    execute(program, args, cwd, false, Duration::from_secs(60), || false)
+    capture_timeout(program, args, cwd, Duration::from_secs(60))
 }
 pub fn capture_timeout(
     program: &str,
@@ -113,6 +43,8 @@ pub fn capture_with_wait(
         crate::actions::stop_requested,
     )
 }
+/// EN: Run interactive-capable operations with the same cancellation and timeout limits.
+/// JA: 対話可能なコマンドも同じ中断・タイムアウト制限のもとで実行します。
 pub fn live(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output, String> {
     execute(
         program,
@@ -124,7 +56,7 @@ pub fn live(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output, 
     )
 }
 
-fn append_tail(dst: &mut Vec<u8>, data: &[u8], limit: usize) {
+pub(super) fn append_tail(dst: &mut Vec<u8>, data: &[u8], limit: usize) {
     if data.len() >= limit {
         dst.clear();
         dst.extend_from_slice(&data[data.len() - limit..]);
@@ -137,7 +69,7 @@ fn append_tail(dst: &mut Vec<u8>, data: &[u8], limit: usize) {
     }
 }
 #[cfg(unix)]
-fn stop_child(child: &mut std::process::Child) {
+pub(super) fn stop_child(child: &mut std::process::Child) {
     use nix::{
         sys::signal::{killpg, Signal},
         unistd::Pid,
@@ -149,18 +81,18 @@ fn stop_child(child: &mut std::process::Child) {
     let _ = child.kill();
 }
 #[cfg(not(unix))]
-fn stop_child(child: &mut std::process::Child) {
+pub(super) fn stop_child(child: &mut std::process::Child) {
     let _ = child.kill();
 }
 
 #[cfg(unix)]
-struct Foreground {
+pub(super) struct Foreground {
     previous: Option<nix::unistd::Pid>,
     mask: nix::sys::signal::SigSet,
 }
 #[cfg(unix)]
 impl Foreground {
-    fn for_child(pid: u32, live: bool) -> Self {
+    pub(super) fn for_child(pid: u32, live: bool) -> Self {
         use nix::{
             sys::signal::{pthread_sigmask, SigSet, SigmaskHow, Signal},
             unistd::{getpgrp, tcgetpgrp, tcsetpgrp, Pid},
@@ -199,7 +131,7 @@ impl Drop for Foreground {
     }
 }
 
-fn execute<F: FnMut() -> bool>(
+pub(super) fn execute<F: FnMut() -> bool>(
     program: &str,
     args: &[&str],
     cwd: Option<&Path>,
@@ -207,7 +139,14 @@ fn execute<F: FnMut() -> bool>(
     timeout: Duration,
     mut cancelled: F,
 ) -> Result<Output, String> {
-    let mut command = Command::new(program);
+    // EN: Resolve managed gh without changing PATH or system installations.
+    // JA: PATHやシステムを変更せず、利用可能な専用ghを解決します。
+    let executable = if program == "gh" {
+        crate::dependencies::resolver::resolve_gh()?
+    } else {
+        std::path::PathBuf::from(program)
+    };
+    let mut command = Command::new(executable);
     command
         .args(args)
         .stdin(if live {
@@ -446,159 +385,4 @@ fn execute<F: FnMut() -> bool>(
         stderr,
         termination,
     })
-}
-
-pub fn failure(program: &str, output: &Output) -> String {
-    let all = if output.stderr.trim().is_empty() {
-        &output.stdout
-    } else {
-        &output.stderr
-    };
-    let start = all.char_indices().rev().nth(8192).map_or(0, |(i, _)| i);
-    let detail = &all[start..];
-    format!(
-        "{}: {:?}\n{}\nexit code {}",
-        safe_text(program),
-        output.termination,
-        safe_text(detail.trim()),
-        output.code
-    )
-}
-pub fn interactive(command: &mut Command) -> Result<bool, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let mut child = command.spawn().map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    let _foreground = Foreground::for_child(child.id(), true);
-    let started = Instant::now();
-    loop {
-        if shutting_down() || started.elapsed() > Duration::from_secs(15 * 60) {
-            stop_child(&mut child);
-            let _ = child.wait();
-            return Err("Interactive authentication cancelled or timed out; inspect gh auth status before retrying.".into());
-        }
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                return if status.success() {
-                    Ok(true)
-                } else {
-                    Err(format!("Interactive authentication failed: {status}"))
-                }
-            }
-            Ok(None) => thread::sleep(Duration::from_millis(50)),
-            Err(e) => {
-                stop_child(&mut child);
-                let _ = child.wait();
-                return Err(e.to_string());
-            }
-        }
-    }
-}
-
-pub fn run_shell(command: &str, dir: &Path) -> Result<(), String> {
-    let (program, args) = if cfg!(windows) {
-        ("cmd", vec!["/C", command])
-    } else {
-        ("sh", vec!["-c", command])
-    };
-    let output = live(program, &args, Some(dir))?;
-    if output.success {
-        Ok(())
-    } else {
-        Err(failure(program, &output))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn terminal_and_credentials_are_not_replayed() {
-        let s = safe_text("\x1b[31m gho_secret https://user:password@example.com/x");
-        assert!(!s.contains('\x1b'));
-        assert!(!s.contains("secret"));
-        assert!(!s.contains("password"));
-    }
-    #[test]
-    fn bounded_tail() {
-        let mut b = vec![1; 8];
-        append_tail(&mut b, &[2; 8], 10);
-        assert_eq!(b.len(), 10);
-        assert_eq!(&b[2..], &[2; 8]);
-    }
-    #[cfg(unix)]
-    #[test]
-    fn capture_invalid_utf8_is_failure() {
-        let o = capture("sh", &["-c", "printf '\\377'"], None).unwrap();
-        assert!(!o.success);
-        assert_eq!(o.termination, Termination::ReadFailed);
-    }
-    #[cfg(unix)]
-    #[test]
-    fn actual_exit_code() {
-        let o = capture("sh", &["-c", "exit 7"], None).unwrap();
-        assert_eq!(o.termination, Termination::Exited(7));
-        assert!(failure("sh", &o).ends_with("exit code 7"));
-    }
-    #[cfg(unix)]
-    #[test]
-    fn timeout_is_distinct() {
-        let o = execute(
-            "sh",
-            &["-c", "sleep 10"],
-            None,
-            false,
-            Duration::from_millis(80),
-            || false,
-        )
-        .unwrap();
-        assert_eq!(o.termination, Termination::TimedOut);
-    }
-    #[cfg(unix)]
-    #[test]
-    fn cancellation_is_distinct() {
-        let started = Instant::now();
-        let o = execute(
-            "sh",
-            &["-c", "sleep 10"],
-            None,
-            false,
-            Duration::from_secs(5),
-            || started.elapsed() > Duration::from_millis(80),
-        )
-        .unwrap();
-        assert_eq!(o.termination, Termination::Cancelled);
-        assert!(started.elapsed() < Duration::from_secs(3));
-    }
-    #[cfg(unix)]
-    #[test]
-    fn descendant_holding_pipe_is_bounded() {
-        let started = Instant::now();
-        let o = capture("sh", &["-c", "sleep 10 & exit 0"], None).unwrap();
-        assert_eq!(o.termination, Termination::ReadFailed);
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
-    #[cfg(unix)]
-    #[test]
-    fn oversized_capture_is_not_success() {
-        let o = capture("sh", &["-c", "yes x"], None).unwrap();
-        assert_eq!(o.termination, Termination::OutputLimit);
-        assert!(!o.success);
-    }
-    #[cfg(unix)]
-    #[test]
-    fn interactive_terminal_reads_and_restores_group() {
-        use std::io::IsTerminal;
-        if !std::io::stdin().is_terminal() {
-            return;
-        }
-        let previous = nix::unistd::tcgetpgrp(std::io::stdin()).unwrap();
-        let mut command = Command::new("sh");
-        command.args(["-c", "read value; test \"$value\" = tty-ok"]);
-        assert!(interactive(&mut command).unwrap());
-        assert_eq!(nix::unistd::tcgetpgrp(std::io::stdin()).unwrap(), previous);
-    }
 }

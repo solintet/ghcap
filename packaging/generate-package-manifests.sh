@@ -2,7 +2,7 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
-RELEASE_VERSION="0.0.29.0"
+RELEASE_VERSION="0.0.31.0"
 DIST="$ROOT/dist"
 REPO=${GITHUB_REPOSITORY:-}
 WINGET_ID=${WINGET_PACKAGE_ID:-ghcap.ghcap}
@@ -28,7 +28,7 @@ cat > "$WINGET_DIR/$WINGET_ID.locale.en-US.yaml" <<EOF
 PackageIdentifier: $WINGET_ID
 PackageVersion: $RELEASE_VERSION
 PackageLocale: en-US
-Publisher: ghcap contributors
+Publisher: solintet
 PackageName: ghcap
 License: BSD-2-Clause
 ShortDescription: Cross-platform GitHub workflow terminal UI
